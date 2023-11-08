@@ -1,0 +1,10 @@
+18:30:57 **** Incremental Build of configuration Debug for project UART_4_enterString ****
+make -j8 all 
+arm-none-eabi-size   UART_4_enterString.elf 
+   text	   data	    bss	    dec	    hex	filename
+   8924	    164	   1972	  11060	   2b34	UART_4_enterString.elf
+Finished building: default.size.stdout
+ 
+
+18:30:57 Build Finished. 0 errors, 0 warnings. (took 275ms)
+

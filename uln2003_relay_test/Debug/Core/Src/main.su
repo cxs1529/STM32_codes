@@ -1,0 +1,7 @@
+../Core/Src/main.c:70:5:main	136	static
+../Core/Src/main.c:200:6:SystemClock_Config	72	static
+../Core/Src/main.c:236:13:MX_USART1_UART_Init	8	static
+../Core/Src/main.c:269:13:MX_GPIO_Init	40	static
+../Core/Src/main.c:305:6:progressive_switching	16	static
+../Core/Src/main.c:333:6:clear_buffer	24	static
+../Core/Src/main.c:345:6:Error_Handler	4	static,ignoring_inline_asm

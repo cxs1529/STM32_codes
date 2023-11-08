@@ -1,0 +1,45 @@
+16:36:51 **** Incremental Build of configuration Debug for project ADC_2_differential ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:130:11: warning: implicit declaration of function 'empty_message' [-Wimplicit-function-declaration]
+  130 |           empty_message(displayMessage, sizeof(displayMessage));
+      |           ^~~~~~~~~~~~~
+../Core/Src/main.c:132:11: warning: implicit declaration of function 'sprintf' [-Wimplicit-function-declaration]
+  132 |           sprintf(displayMessage,"A:%d B:%d B-A:%d >> %.3f V\r\n", adcReadingA, adcReadingB, adcReadingDiff, voltageDiff);
+      |           ^~~~~~~
+../Core/Src/main.c:25:1: note: include '<stdio.h>' or provide a declaration of 'sprintf'
+   24 | #include "main.h"
+  +++ |+#include <stdio.h>
+   25 | 
+../Core/Src/main.c:132:11: warning: incompatible implicit declaration of built-in function 'sprintf' [-Wbuiltin-declaration-mismatch]
+  132 |           sprintf(displayMessage,"A:%d B:%d B-A:%d >> %.3f V\r\n", adcReadingA, adcReadingB, adcReadingDiff, voltageDiff);
+      |           ^~~~~~~
+../Core/Src/main.c:132:11: note: include '<stdio.h>' or provide a declaration of 'sprintf'
+../Core/Src/main.c:132:19: warning: pointer targets in passing argument 1 of 'sprintf' differ in signedness [-Wpointer-sign]
+  132 |           sprintf(displayMessage,"A:%d B:%d B-A:%d >> %.3f V\r\n", adcReadingA, adcReadingB, adcReadingDiff, voltageDiff);
+      |                   ^~~~~~~~~~~~~~
+      |                   |
+      |                   uint8_t * {aka unsigned char *}
+../Core/Src/main.c:132:19: note: expected 'char *' but argument is of type 'uint8_t *' {aka 'unsigned char *'}
+../Core/Src/main.c: At top level:
+../Core/Src/main.c:300:6: warning: conflicting types for 'empty_message'; have 'void(uint8_t *, uint8_t)' {aka 'void(unsigned char *, unsigned char)'}
+  300 | void empty_message(uint8_t array[], uint8_t size){
+      |      ^~~~~~~~~~~~~
+../Core/Src/main.c:130:11: note: previous implicit declaration of 'empty_message' with type 'void(uint8_t *, uint8_t)' {aka 'void(unsigned char *, unsigned char)'}
+  130 |           empty_message(displayMessage, sizeof(displayMessage));
+      |           ^~~~~~~~~~~~~
+arm-none-eabi-gcc -o "ADC_2_differential.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Users\christian.saiz\STM32CubeIDE\workspace_1.13.1\ADC_2_differential\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="ADC_2_differential.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: ADC_2_differential.elf
+ 
+arm-none-eabi-size   ADC_2_differential.elf 
+arm-none-eabi-objdump -h -S  ADC_2_differential.elf  > "ADC_2_differential.list"
+   text	   data	    bss	    dec	    hex	filename
+  25268	    476	   2028	  27772	   6c7c	ADC_2_differential.elf
+Finished building: default.size.stdout
+ 
+Finished building: ADC_2_differential.list
+ 
+
+16:36:52 Build Finished. 0 errors, 5 warnings. (took 718ms)
+

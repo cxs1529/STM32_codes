@@ -1,0 +1,6 @@
+../Core/Src/main.c:79:5:main	16	static
+../Core/Src/main.c:132:6:SystemClock_Config	72	static
+../Core/Src/main.c:170:6:printWelcomeMessage	8	static
+../Core/Src/main.c:177:9:readInput	16	static
+../Core/Src/main.c:186:9:processInput	48	static
+../Core/Src/main.c:219:6:Error_Handler	4	static,ignoring_inline_asm
