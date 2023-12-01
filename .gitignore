@@ -1,0 +1,5 @@
+# ignore .metadata directory
+.metadata/
+
+# ignore test directories 
+test*/

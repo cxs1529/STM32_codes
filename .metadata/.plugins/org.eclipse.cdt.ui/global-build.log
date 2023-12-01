@@ -12994,3 +12994,17 @@ Finished building: default.size.stdout
  
 Finished building: ADC_2_differential.list
  
+16:13:48 **** Build of configuration Debug for project Blink_1 ****
+make -j8 all 
+arm-none-eabi-size   Blink_1.elf 
+   text	   data	    bss	    dec	    hex	filename
+   4624	     20	   1572	   6216	   1848	Blink_1.elf
+Finished building: default.size.stdout
+ 
+16:15:33 **** Incremental Build of configuration Debug for project Blink_1 ****
+make -j8 all 
+arm-none-eabi-size   Blink_1.elf 
+   text	   data	    bss	    dec	    hex	filename
+   4624	     20	   1572	   6216	   1848	Blink_1.elf
+Finished building: default.size.stdout
+ 

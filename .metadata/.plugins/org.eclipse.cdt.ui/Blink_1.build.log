@@ -1,17 +1,10 @@
-20:48:15 **** Incremental Build of configuration Debug for project Blink_1 ****
+16:15:33 **** Incremental Build of configuration Debug for project Blink_1 ****
 make -j8 all 
-arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
-arm-none-eabi-gcc -o "Blink_1.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Users\christian.saiz\STM32CubeIDE\workspace_1.13.1\Blink_1\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Blink_1.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
-Finished building target: Blink_1.elf
- 
 arm-none-eabi-size   Blink_1.elf 
-arm-none-eabi-objdump -h -S  Blink_1.elf  > "Blink_1.list"
    text	   data	    bss	    dec	    hex	filename
    4624	     20	   1572	   6216	   1848	Blink_1.elf
 Finished building: default.size.stdout
  
-Finished building: Blink_1.list
- 
 
-20:48:16 Build Finished. 0 errors, 0 warnings. (took 732ms)
+16:15:33 Build Finished. 0 errors, 0 warnings. (took 221ms)
 
