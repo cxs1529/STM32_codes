@@ -37,15 +37,15 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   CONTENTS, READONLY, DEBUGGING, OCTETS
  16 .debug_rnglists 00000730  00000000  00000000  00029d78  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_macro  000165fc  00000000  00000000  0002a4a8  2**0
+ 17 .debug_macro  00016608  00000000  00000000  0002a4a8  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_line   000099b3  00000000  00000000  00040aa4  2**0
+ 18 .debug_line   000099b3  00000000  00000000  00040ab0  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .debug_str    00084134  00000000  00000000  0004a457  2**0
+ 19 .debug_str    00084149  00000000  00000000  0004a463  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 20 .debug_frame  00002668  00000000  00000000  000ce58c  2**2
+ 20 .debug_frame  00002668  00000000  00000000  000ce5ac  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 21 .debug_line_str 00000074  00000000  00000000  000d0bf4  2**0
+ 21 .debug_line_str 00000074  00000000  00000000  000d0c14  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -405,15 +405,15 @@ static void MX_TIM4_Init(void)
  8000302:	4b22      	ldr	r3, [pc, #136]	; (800038c <MX_TIM4_Init+0xac>)
  8000304:	4a22      	ldr	r2, [pc, #136]	; (8000390 <MX_TIM4_Init+0xb0>)
  8000306:	601a      	str	r2, [r3, #0]
-  htim4.Init.Prescaler = 1000-1;
+  htim4.Init.Prescaler = DIVIDER-1;
  8000308:	4b20      	ldr	r3, [pc, #128]	; (800038c <MX_TIM4_Init+0xac>)
- 800030a:	f240 32e7 	movw	r2, #999	; 0x3e7
+ 800030a:	f240 12f3 	movw	r2, #499	; 0x1f3
  800030e:	605a      	str	r2, [r3, #4]
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
  8000310:	4b1e      	ldr	r3, [pc, #120]	; (800038c <MX_TIM4_Init+0xac>)
  8000312:	2200      	movs	r2, #0
  8000314:	609a      	str	r2, [r3, #8]
-  htim4.Init.Period = 20-1;
+  htim4.Init.Period = PULSE-1;
  8000316:	4b1d      	ldr	r3, [pc, #116]	; (800038c <MX_TIM4_Init+0xac>)
  8000318:	2213      	movs	r2, #19
  800031a:	60da      	str	r2, [r3, #12]
