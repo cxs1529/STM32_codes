@@ -1,120 +1,21 @@
-15:25:11 **** Incremental Build of configuration Debug for project DRV8825_uart_control ****
+14:10:18 **** Incremental Build of configuration Debug for project PWM_sweep ****
 make -j8 all 
-arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
-../Core/Src/main.c: In function 'main':
-../Core/Src/main.c:106:11: warning: unused variable 'prompt' [-Wunused-variable]
-  106 |   uint8_t prompt[] = "\r\nCommand:";
-      |           ^~~~~~
-../Core/Src/main.c:105:11: warning: unused variable 'command' [-Wunused-variable]
-  105 |   uint8_t command[] = "";
-      |           ^~~~~~~
-arm-none-eabi-gcc -o "DRV8825_uart_control.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Users\christian.saiz\STM32CubeIDE\workspace_1.13.1\DRV8825_uart_control\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="DRV8825_uart_control.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
-Finished building target: DRV8825_uart_control.elf
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "PWM_sweep.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Users\christian.saiz\STM32CubeIDE\workspace_1.13.1\PWM_sweep\STM32F103RBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="PWM_sweep.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: PWM_sweep.elf
  
-arm-none-eabi-size   DRV8825_uart_control.elf 
-arm-none-eabi-objdump -h -S  DRV8825_uart_control.elf  > "DRV8825_uart_control.list"
+arm-none-eabi-size   PWM_sweep.elf 
+arm-none-eabi-objdump -h -S  PWM_sweep.elf  > "PWM_sweep.list"
    text	   data	    bss	    dec	    hex	filename
-   8804	     20	   1716	  10540	   292c	DRV8825_uart_control.elf
+  10124	     24	   1784	  11932	   2e9c	PWM_sweep.elf
 Finished building: default.size.stdout
  
-Finished building: DRV8825_uart_control.list
+Finished building: PWM_sweep.list
  
-15:25:17 **** Incremental Build of configuration Debug for project DRV8825_uart_control ****
+14:10:22 **** Incremental Build of configuration Debug for project PWM_sweep ****
 make -j8 all 
-arm-none-eabi-size   DRV8825_uart_control.elf 
+arm-none-eabi-size   PWM_sweep.elf 
    text	   data	    bss	    dec	    hex	filename
-   8804	     20	   1716	  10540	   292c	DRV8825_uart_control.elf
+  10124	     24	   1784	  11932	   2e9c	PWM_sweep.elf
 Finished building: default.size.stdout
- 
-15:26:25 **** Incremental Build of configuration Debug for project DRV8825_uart_control ****
-make -j8 all 
-arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
-../Core/Src/main.c: In function 'main':
-../Core/Src/main.c:106:11: warning: unused variable 'prompt' [-Wunused-variable]
-  106 |   uint8_t prompt[] = "\r\nCommand:";
-      |           ^~~~~~
-../Core/Src/main.c:105:11: warning: unused variable 'command' [-Wunused-variable]
-  105 |   uint8_t command[] = "";
-      |           ^~~~~~~
-arm-none-eabi-gcc -o "DRV8825_uart_control.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Users\christian.saiz\STM32CubeIDE\workspace_1.13.1\DRV8825_uart_control\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="DRV8825_uart_control.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
-Finished building target: DRV8825_uart_control.elf
- 
-arm-none-eabi-size   DRV8825_uart_control.elf 
-arm-none-eabi-objdump -h -S  DRV8825_uart_control.elf  > "DRV8825_uart_control.list"
-   text	   data	    bss	    dec	    hex	filename
-   8800	     20	   1716	  10536	   2928	DRV8825_uart_control.elf
-Finished building: default.size.stdout
- 
-Finished building: DRV8825_uart_control.list
- 
-15:29:55 **** Incremental Build of configuration Debug for project DRV8825_uart_control ****
-make -j8 all 
-arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
-arm-none-eabi-gcc -o "DRV8825_uart_control.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Users\christian.saiz\STM32CubeIDE\workspace_1.13.1\DRV8825_uart_control\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="DRV8825_uart_control.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
-Finished building target: DRV8825_uart_control.elf
- 
-arm-none-eabi-size   DRV8825_uart_control.elf 
-arm-none-eabi-objdump -h -S  DRV8825_uart_control.elf  > "DRV8825_uart_control.list"
-   text	   data	    bss	    dec	    hex	filename
-   9216	     20	   1716	  10952	   2ac8	DRV8825_uart_control.elf
-Finished building: default.size.stdout
- 
-Finished building: DRV8825_uart_control.list
- 
-15:30:35 **** Incremental Build of configuration Debug for project DRV8825_uart_control ****
-make -j8 all 
-arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
-arm-none-eabi-gcc -o "DRV8825_uart_control.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Users\christian.saiz\STM32CubeIDE\workspace_1.13.1\DRV8825_uart_control\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="DRV8825_uart_control.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
-Finished building target: DRV8825_uart_control.elf
- 
-arm-none-eabi-size   DRV8825_uart_control.elf 
-arm-none-eabi-objdump -h -S  DRV8825_uart_control.elf  > "DRV8825_uart_control.list"
-   text	   data	    bss	    dec	    hex	filename
-   9704	     20	   1716	  11440	   2cb0	DRV8825_uart_control.elf
-Finished building: default.size.stdout
- 
-Finished building: DRV8825_uart_control.list
- 
-15:33:53 **** Incremental Build of configuration Debug for project DRV8825_uart_control ****
-make -j8 all 
-arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
-arm-none-eabi-gcc "../Core/Src/stm32f1xx_hal_msp.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/stm32f1xx_hal_msp.d" -MT"Core/Src/stm32f1xx_hal_msp.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/stm32f1xx_hal_msp.o"
-arm-none-eabi-gcc -o "DRV8825_uart_control.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Users\christian.saiz\STM32CubeIDE\workspace_1.13.1\DRV8825_uart_control\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="DRV8825_uart_control.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
-Finished building target: DRV8825_uart_control.elf
- 
-arm-none-eabi-size   DRV8825_uart_control.elf 
-arm-none-eabi-objdump -h -S  DRV8825_uart_control.elf  > "DRV8825_uart_control.list"
-   text	   data	    bss	    dec	    hex	filename
-   8780	     20	   1716	  10516	   2914	DRV8825_uart_control.elf
-Finished building: default.size.stdout
- 
-Finished building: DRV8825_uart_control.list
- 
-15:38:25 **** Incremental Build of configuration Debug for project DRV8825_uart_control ****
-make -j8 all 
-arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
-arm-none-eabi-gcc -o "DRV8825_uart_control.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Users\christian.saiz\STM32CubeIDE\workspace_1.13.1\DRV8825_uart_control\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="DRV8825_uart_control.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
-Finished building target: DRV8825_uart_control.elf
- 
-arm-none-eabi-size   DRV8825_uart_control.elf 
-arm-none-eabi-objdump -h -S  DRV8825_uart_control.elf  > "DRV8825_uart_control.list"
-   text	   data	    bss	    dec	    hex	filename
-   9312	     20	   1716	  11048	   2b28	DRV8825_uart_control.elf
-Finished building: default.size.stdout
- 
-Finished building: DRV8825_uart_control.list
- 
-15:42:15 **** Incremental Build of configuration Debug for project DRV8825_uart_control ****
-make -j8 all 
-arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Core/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Core/Src/main.o"
-arm-none-eabi-gcc -o "DRV8825_uart_control.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Users\christian.saiz\STM32CubeIDE\workspace_1.13.1\DRV8825_uart_control\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="DRV8825_uart_control.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
-Finished building target: DRV8825_uart_control.elf
- 
-arm-none-eabi-size   DRV8825_uart_control.elf 
-arm-none-eabi-objdump -h -S  DRV8825_uart_control.elf  > "DRV8825_uart_control.list"
-   text	   data	    bss	    dec	    hex	filename
-   9156	     20	   1716	  10892	   2a8c	DRV8825_uart_control.elf
-Finished building: default.size.stdout
- 
-Finished building: DRV8825_uart_control.list
  
