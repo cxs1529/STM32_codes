@@ -2,4 +2,4 @@
 .metadata/
 
 # ignore test directories 
-test*/
+test/
