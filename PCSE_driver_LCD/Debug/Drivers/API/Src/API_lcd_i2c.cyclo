@@ -1,0 +1,11 @@
+../Drivers/API/Src/API_lcd_i2c.c:31:6:lcd_send_byte	1
+../Drivers/API/Src/API_lcd_i2c.c:53:6:send_bytes_i2c	1
+../Drivers/API/Src/API_lcd_i2c.c:58:6:lcd_clear	1
+../Drivers/API/Src/API_lcd_i2c.c:62:6:return_home	1
+../Drivers/API/Src/API_lcd_i2c.c:66:6:lcd_set_position	5
+../Drivers/API/Src/API_lcd_i2c.c:79:6:lcd_print_text	2
+../Drivers/API/Src/API_lcd_i2c.c:87:6:control_backlight	1
+../Drivers/API/Src/API_lcd_i2c.c:93:6:shift_display	1
+../Drivers/API/Src/API_lcd_i2c.c:98:6:create_character	3
+../Drivers/API/Src/API_lcd_i2c.c:114:6:lcd_init	1
+../Drivers/API/Src/API_lcd_i2c.c:141:6:i2c_linker	1

@@ -37,7 +37,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define WELCOME_MSG "Welcome to the Autolauncher console test\r\n"
-#define MAIN_MENU "Select an option:\r\n1-Toggle green led\r\n2-Set relay\r\n3-Reset relay\r\n4-Run motor CW\r\n5-Run motor CCW\r\n6-MUX change to GPS\r\n7-MUX change to STM32\r\n8-Read Vin\r\n9-Write/read eeprom\r\n0-Read eeprom\r\n"
+//#define MAIN_MENU "Select an option:\r\n1-Toggle green led\r\n2-Set relay\r\n3-Reset relay\r\n4-Run motor CW\r\n5-Run motor CCW\r\n6-MUX change to GPS\r\n7-MUX change to STM32\r\n8-Read Vin\r\n9-Write/read eeprom\r\n0-Read eeprom\r\n"
 #define PROMPT "\r\n> Enter command: "
 /* USER CODE END PD */
 
@@ -49,15 +49,20 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+const char menu[] = "Select an option:"
+		"\r\n0-Read eeprom\r\n1-Toggle green led\r\n2-Set relay K1\r\n3-Reset relays 1-6\r\n4-Run motor CW\r\n5-Run motor CCW"
+		"\r\n6-MUX change to GPS\r\n7-MUX change to STM32\r\n8-Read Vin\r\n9-Write/read eeprom"
+		"\r\na-Set relay K2\r\nb-Set relay K3\r\nc-Set relay K4\r\nd-Set relay K5\r\ne-Set relay K6\r\n";
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void printWelcomeMessage(void); // Print initial message
-uint8_t readInput(void);
-uint8_t processInput(uint8_t option);
+//uint8_t readInput(void);
+char readInput(void);
+//uint8_t processInput(uint8_t option);
+uint8_t processInput(char option);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -98,20 +103,22 @@ int main(void)
   MX_ADC1_Init();
   MX_ADC2_Init();
   MX_I2C1_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, SET); // Active low >> start disabled
 
-  uint8_t option = 0; // Initial option value
+  //uint8_t option = 0; // Initial option value
+  char option = '\0';
   uint8_t result = 0;
 
   // SET = UART-tx / RESET = Din from GPS
   HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, SET);
 
   // Initialize relay in reset state
-  HAL_GPIO_WritePin(RESET_RELAY_GPIO_Port, RESET_RELAY_Pin, SET); // reset relay
+  HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, SET); // reset relay
   HAL_Delay(10);
-  HAL_GPIO_WritePin(RESET_RELAY_GPIO_Port, RESET_RELAY_Pin, RESET); // release reset coil
+  HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, RESET); // release reset coil
   HAL_Delay(5);
 
   // Start timer for STEP signal
@@ -180,22 +187,23 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 void printWelcomeMessage(void){
 	HAL_UART_Transmit(&huart1, WELCOME_MSG, strlen(WELCOME_MSG), HAL_MAX_DELAY);
-	HAL_UART_Transmit(&huart1, MAIN_MENU, strlen(MAIN_MENU), HAL_MAX_DELAY);
+	HAL_UART_Transmit(&huart1, menu, strlen(menu), HAL_MAX_DELAY);
 }
 
 
 /* Read user input and return the option selected 1-2-3*/
-uint8_t readInput(void){
+char readInput(void){
 	char rxBuffer[1];
 
 	HAL_UART_Transmit(&huart1, PROMPT, strlen(PROMPT), HAL_MAX_DELAY);
 	HAL_UART_Receive(&huart1, rxBuffer, 1, HAL_MAX_DELAY);
 	HAL_UART_Transmit(&huart1, rxBuffer, 1, HAL_MAX_DELAY); // echo
 
-	return atoi(rxBuffer);
+	//return atoi(rxBuffer);
+	return rxBuffer[0];
 }
 
-uint8_t processInput(uint8_t option){
+uint8_t processInput(char option){
 	// default
 	char msg[30];
 	// ADC measurement
@@ -215,10 +223,45 @@ uint8_t processInput(uint8_t option){
 
 	// Execute selected action
 	switch(option){
-	case 1: // toggle green led
+	case 'a': // Set relay
+		// SET relay k2
+		HAL_GPIO_WritePin(RELAY_K2_GPIO_Port, RELAY_K2_Pin, SET); // set relay
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(RELAY_K2_GPIO_Port, RELAY_K2_Pin, RESET); // release coil
+		HAL_Delay(5);
+		return 0;
+	case 'b': // Set relay
+		// SET relay k3
+		HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, SET); // set relay
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, RESET); // release coil
+		HAL_Delay(5);
+		return 0;
+	case 'c': // Set relay
+		// SET relay k4
+		HAL_GPIO_WritePin(RELAY_K4_GPIO_Port, RELAY_K4_Pin, SET); // set relay
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(RELAY_K4_GPIO_Port, RELAY_K4_Pin, RESET); // release coil
+		HAL_Delay(5);
+		return 0;
+	case 'd': // Set relay
+		// SET relay k5
+		HAL_GPIO_WritePin(RELAY_K5_GPIO_Port, RELAY_K5_Pin, SET); // set relay
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(RELAY_K5_GPIO_Port, RELAY_K5_Pin, RESET); // release coil
+		HAL_Delay(5);
+		return 0;
+	case 'e': // Set relay
+		// SET relay k6
+		HAL_GPIO_WritePin(RELAY_K6_GPIO_Port, RELAY_K6_Pin, SET); // set relay
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(RELAY_K6_GPIO_Port, RELAY_K6_Pin, RESET); // release coil
+		HAL_Delay(5);
+		return 0;
+	case '1': // toggle green led
 		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 		return 0;
-	case 2: // Set relay
+	case '2': // Set relay
 		// SET relay k1
 		HAL_GPIO_WritePin(RELAY_K1_GPIO_Port, RELAY_K1_Pin, SET); // set relay
 		HAL_Delay(10);
@@ -230,14 +273,14 @@ uint8_t processInput(uint8_t option){
 		HAL_GPIO_WritePin(SSR_XBT1_GPIO_Port, SSR_XBT1_Pin, RESET); // release SSR latch
 		HAL_Delay(5);
 		return 0;
-	case 3: // Reset relay
+	case '3': // Reset relay
 		// RESET relay k1
-		HAL_GPIO_WritePin(RESET_RELAY_GPIO_Port, RESET_RELAY_Pin, SET); // reset relay and SSR
+		HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, SET); // reset relay and SSR
 		HAL_Delay(10);
-		HAL_GPIO_WritePin(RESET_RELAY_GPIO_Port, RESET_RELAY_Pin, RESET); // release reset coil
+		HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, RESET); // release reset coil
 		HAL_Delay(5);
 		return 0;
-	case 4: // Run motor CW
+	case '4': // Run motor CW
 		HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 ); // Start STEP signal >> counter toggle to toggle every 20/1000 sec = 50hz
 		// motor
 		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, SET); // disable driver
@@ -278,7 +321,7 @@ uint8_t processInput(uint8_t option){
 		HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_3 );
 
 		return 0;
-	case 5: // Run motor CCW
+	case '5': // Run motor CCW
 		HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 );
 		// motor
 		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, SET); // disable driver
@@ -290,13 +333,13 @@ uint8_t processInput(uint8_t option){
 
 		HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_3 );
 		return 0;
-	case 6: // change MUX to GPS
+	case '6': // change MUX to GPS
 		HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, RESET);
 		return 0;
-	case 7: // change MUX to STM32
+	case '7': // change MUX to STM32
 		HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, SET);
 		return 0;
-	case 8: // read ADC Vin
+	case '8': // read ADC Vin
 		HAL_ADC_Start(&hadc1);
 		for(uint8_t i=0; i<10; i++){
 			HAL_ADC_PollForConversion(&hadc1, 100);
@@ -310,7 +353,7 @@ uint8_t processInput(uint8_t option){
 		sprintf(adcmsg, "Vin = %d ", (int)vin);
 		HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
 		return 0;
-	case 9:
+	case '9':
 		// get values to store in eeprom
 		uint8_t a,b;
 		char rxBuffer[1];
@@ -340,7 +383,7 @@ uint8_t processInput(uint8_t option){
 		sprintf(output,"\r\nStored values: %i, %i, %i\r\n", dataReceive[0], dataReceive[1], dataReceive[2]);
 		HAL_UART_Transmit(&huart1, output, strlen(output), HAL_MAX_DELAY);
 		return 0;
-	case 0:
+	case '0':
 		// read 2 bytes from data address 0x00, 0x01
 		HAL_I2C_Master_Transmit(&hi2c1, chipAddress , startAddress, 1, HAL_MAX_DELAY); // dummy write with word address 0x00 as starting address
 		HAL_Delay(10);
