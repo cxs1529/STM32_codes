@@ -68,6 +68,7 @@ static void MX_TIM3_Init(void);
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -164,7 +165,7 @@ int main(void)
 	  HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // enable driver
 
 
-	  HAL_Delay(2000); // wait 10 seconds and toggle all
+	  HAL_Delay(5000); // wait 10 seconds and toggle all
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

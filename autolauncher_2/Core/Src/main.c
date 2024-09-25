@@ -50,9 +50,10 @@
 
 /* USER CODE BEGIN PV */
 const char menu[] = "Select an option:"
-		"\r\n0-Read eeprom\r\n1-Toggle green led\r\n2-Set relay K1\r\n3-Reset relays 1-6\r\n4-Run motor CW\r\n5-Run motor CCW"
+		"\r\n0-Read eeprom\r\n1-Toggle green led\r\n2-Set relay K1 & SSR1\r\n3-Reset relays K1-4 & SSR 1-4\r\n4-Run motor 1 CW\r\n5-Run motor 1 CCW"
 		"\r\n6-MUX change to GPS\r\n7-MUX change to STM32\r\n8-Read Vin\r\n9-Write/read eeprom"
-		"\r\na-Set relay K2\r\nb-Set relay K3\r\nc-Set relay K4\r\nd-Set relay K5\r\ne-Set relay K6\r\n";
+		"\r\na-Set relay K2 & SSR2\r\nb-Set relay K3 & SSR3\r\nc-Set relay K4 & SSR4\r\nd-Set relay K5\r\ne-Set relay K6"
+		"\r\nf-Run motor 2 CW\r\ng-Run motor 2 CCW\r\n";
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -76,6 +77,7 @@ uint8_t processInput(char option);
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -106,7 +108,8 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, SET); // Active low >> start disabled
+  HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // start disabled
+  HAL_GPIO_WritePin(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, RESET); // start disabled
 
   //uint8_t option = 0; // Initial option value
   char option = '\0';
@@ -115,15 +118,11 @@ int main(void)
   // SET = UART-tx / RESET = Din from GPS
   HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, SET);
 
-  // Initialize relay in reset state
+  // Initialize relay in reset state >> RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
   HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, SET); // reset relay
   HAL_Delay(10);
   HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, RESET); // release reset coil
   HAL_Delay(5);
-
-  // Start timer for STEP signal
-  //HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 ); // Start STEP signal >> counter toggle to toggle every 20/1000 sec = 50hz
-
 
   printWelcomeMessage();
   /* USER CODE END 2 */
@@ -209,7 +208,11 @@ uint8_t processInput(char option){
 	// ADC measurement
 	char adcmsg[30];
 	float vin = 0.0;
-	uint16_t adcReading = 0;
+	uint16_t motor_i = 0;
+	uint32_t adcReading = 0;
+	uint32_t runtime = 5000; // motor runtime ms
+	uint32_t t0; // init time for runtime
+
 	// EEPROM
 	uint8_t chipAddress = 0xA0; // 0b1010000 7 bit address
 	uint8_t dataReceive[10];
@@ -223,41 +226,6 @@ uint8_t processInput(char option){
 
 	// Execute selected action
 	switch(option){
-	case 'a': // Set relay
-		// SET relay k2
-		HAL_GPIO_WritePin(RELAY_K2_GPIO_Port, RELAY_K2_Pin, SET); // set relay
-		HAL_Delay(10);
-		HAL_GPIO_WritePin(RELAY_K2_GPIO_Port, RELAY_K2_Pin, RESET); // release coil
-		HAL_Delay(5);
-		return 0;
-	case 'b': // Set relay
-		// SET relay k3
-		HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, SET); // set relay
-		HAL_Delay(10);
-		HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, RESET); // release coil
-		HAL_Delay(5);
-		return 0;
-	case 'c': // Set relay
-		// SET relay k4
-		HAL_GPIO_WritePin(RELAY_K4_GPIO_Port, RELAY_K4_Pin, SET); // set relay
-		HAL_Delay(10);
-		HAL_GPIO_WritePin(RELAY_K4_GPIO_Port, RELAY_K4_Pin, RESET); // release coil
-		HAL_Delay(5);
-		return 0;
-	case 'd': // Set relay
-		// SET relay k5
-		HAL_GPIO_WritePin(RELAY_K5_GPIO_Port, RELAY_K5_Pin, SET); // set relay
-		HAL_Delay(10);
-		HAL_GPIO_WritePin(RELAY_K5_GPIO_Port, RELAY_K5_Pin, RESET); // release coil
-		HAL_Delay(5);
-		return 0;
-	case 'e': // Set relay
-		// SET relay k6
-		HAL_GPIO_WritePin(RELAY_K6_GPIO_Port, RELAY_K6_Pin, SET); // set relay
-		HAL_Delay(10);
-		HAL_GPIO_WritePin(RELAY_K6_GPIO_Port, RELAY_K6_Pin, RESET); // release coil
-		HAL_Delay(5);
-		return 0;
 	case '1': // toggle green led
 		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 		return 0;
@@ -274,7 +242,7 @@ uint8_t processInput(char option){
 		HAL_Delay(5);
 		return 0;
 	case '3': // Reset relay
-		// RESET relay k1
+		// RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
 		HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, SET); // reset relay and SSR
 		HAL_Delay(10);
 		HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, RESET); // release reset coil
@@ -283,54 +251,66 @@ uint8_t processInput(char option){
 	case '4': // Run motor CW
 		HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 ); // Start STEP signal >> counter toggle to toggle every 20/1000 sec = 50hz
 		// motor
-		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, SET); // disable driver
+		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // disable driver
 		HAL_Delay(500); // wait for the motor to stop
 		HAL_GPIO_WritePin(DIR_GPIO_Port,DIR_Pin, SET); // set motor direction
-		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // enable driver to run motor
+		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, SET); // enable driver to run motor
 		// read current
-		HAL_ADC_Start(&hadc2);
+		// should launch a timer here and stop it after X seconds
+		//uint32_t runtime = 5000; // ms
+		t0 = HAL_GetTick();
 
-		HAL_ADC_PollForConversion(&hadc2, 100);
-		adcReading = (uint16_t) HAL_ADC_GetValue(&hadc2);
-		sprintf(adcmsg, "Im_1 = %d\r\n", (uint32_t) adcReading);
-		HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
-		HAL_Delay(1000);
+		for (uint8_t ci = 1; ci < 20; ci++){
+			adcReading = 0;
+			for(uint8_t cj = 0; cj<100; cj++){
+				HAL_ADC_Start(&hadc2);
+				HAL_ADC_PollForConversion(&hadc2, 100);
+				adcReading += HAL_ADC_GetValue(&hadc2);
+				HAL_ADC_Stop(&hadc2);
+				HAL_Delay(1);
+			}
+			adcReading = adcReading/100;
+			motor_i = (uint16_t) (adcReading * 0.163 + 7.3581); // mA - opAmp G = 50, Rsense = 0.10 ohm
 
-		HAL_ADC_PollForConversion(&hadc2, 100);
-		adcReading = (uint16_t) HAL_ADC_GetValue(&hadc2);
-		sprintf(adcmsg, "Im_2 = %d\r\n", (uint32_t) adcReading);
-		HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
-		HAL_Delay(1000);
-
-		HAL_ADC_PollForConversion(&hadc2, 100);
-		adcReading = (uint16_t) HAL_ADC_GetValue(&hadc2);
-		sprintf(adcmsg, "Im_3 = %d\r\n", (uint32_t) adcReading);
-		HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
-		HAL_Delay(1000);
-
-		HAL_ADC_PollForConversion(&hadc2, 100);
-		adcReading = (uint16_t) HAL_ADC_GetValue(&hadc2);
-		sprintf(adcmsg, "Im_4 = %d\r\n", (uint32_t) adcReading);
-		HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
-		HAL_Delay(1000);
-
-		HAL_ADC_Stop(&hadc1);
-
-		//HAL_Delay(5000); // run 5 seconds
-		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, SET); // disable driver
+			sprintf(adcmsg, "[AD# %d] Im_%d = %d mA\r\n", (int)adcReading, ci ,(int) motor_i);
+			HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
+			HAL_Delay(1000);
+			if((HAL_GetTick() - t0) > runtime) break;
+		}
+		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // disable driver
 		HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_3 );
 
 		return 0;
 	case '5': // Run motor CCW
-		HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 );
+		HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 ); // Start STEP signal >> counter toggle to toggle every 20/1000 sec = 50hz
 		// motor
-		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, SET); // disable driver
+		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // disable driver
 		HAL_Delay(500); // wait for the motor to stop
 		HAL_GPIO_WritePin(DIR_GPIO_Port,DIR_Pin, RESET); // set motor direction
-		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // enable driver to run motor
-		HAL_Delay(5000); // run 5 seconds
-		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, SET); // disable driver
+		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, SET); // enable driver to run motor
+		// read current
+		// should launch a timer here and stop it after X seconds
 
+		t0 = HAL_GetTick();
+
+		for (uint8_t ci = 1; ci < 20; ci++){
+			adcReading = 0;
+			for(uint8_t cj = 0; cj<100; cj++){
+				HAL_ADC_Start(&hadc2);
+				HAL_ADC_PollForConversion(&hadc2, 100);
+				adcReading += HAL_ADC_GetValue(&hadc2);
+				HAL_ADC_Stop(&hadc2);
+				HAL_Delay(1);
+			}
+			adcReading = adcReading/100;
+			motor_i = (uint16_t) (adcReading * 0.163 + 7.3581); // mA - opAmp G = 50, Rsense = 0.10 ohm
+
+			sprintf(adcmsg, "[AD# %d] Im_%d = %d mA\r\n", (int)adcReading, ci ,(int) motor_i);
+			HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
+			HAL_Delay(1000);
+			if((HAL_GetTick() - t0) > runtime) break;
+		}
+		HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // disable driver
 		HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_3 );
 		return 0;
 	case '6': // change MUX to GPS
@@ -340,17 +320,20 @@ uint8_t processInput(char option){
 		HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, SET);
 		return 0;
 	case '8': // read ADC Vin
-		HAL_ADC_Start(&hadc1);
 		for(uint8_t i=0; i<10; i++){
+			HAL_ADC_Start(&hadc1);
 			HAL_ADC_PollForConversion(&hadc1, 100);
-			adcReading += (uint16_t) HAL_ADC_GetValue(&hadc1);
+			adcReading += HAL_ADC_GetValue(&hadc1);
+			HAL_ADC_Stop(&hadc1);
+			HAL_Delay(1);
 		}
-		HAL_ADC_Stop(&hadc1);
 		adcReading = adcReading/10;
-		vin = adcReading * 17.0/1867.0;
+		vin = adcReading * 0.0083 + 0.3963; // 15.23
+		// get 1 decimal
+		int dec = (int)(vin * 10 - ((int)vin * 10)); // 152 - 150 = 2
 
 		//char adcmsg[30];
-		sprintf(adcmsg, "Vin = %d ", (int)vin);
+		sprintf(adcmsg, "[AD# %d] Vin= %d.%d V\r\n", (int)adcReading,(int)vin, dec);
 		HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
 		return 0;
 	case '9':
@@ -391,6 +374,120 @@ uint8_t processInput(char option){
 
 		sprintf(output,"Stored values: %i, %i, %i\r\n", dataReceive[0], dataReceive[1], dataReceive[2]);
 		HAL_UART_Transmit(&huart1, output, strlen(output), HAL_MAX_DELAY);
+		return 0;
+	case 'a': // Set relay
+		// SET relay k2
+		HAL_GPIO_WritePin(RELAY_K2_GPIO_Port, RELAY_K2_Pin, SET); // set relay
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(RELAY_K2_GPIO_Port, RELAY_K2_Pin, RESET); // release coil
+		HAL_Delay(5);
+		// SET SSR XBT2
+		HAL_GPIO_WritePin(SSR_XBT2_GPIO_Port, SSR_XBT2_Pin, SET); // set SSR latch
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(SSR_XBT2_GPIO_Port, SSR_XBT2_Pin, RESET); // release SSR latch
+		HAL_Delay(5);
+		return 0;
+	case 'b': // Set relay
+		// SET relay k3
+		HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, SET); // set relay
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, RESET); // release coil
+		HAL_Delay(5);
+		// SET SSR XBT3
+		HAL_GPIO_WritePin(SSR_XBT3_GPIO_Port, SSR_XBT3_Pin, SET); // set SSR latch
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(SSR_XBT3_GPIO_Port, SSR_XBT3_Pin, RESET); // release SSR latch
+		HAL_Delay(5);
+		return 0;
+	case 'c': // Set relay
+		// SET relay k4
+		HAL_GPIO_WritePin(RELAY_K4_GPIO_Port, RELAY_K4_Pin, SET); // set relay
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(RELAY_K4_GPIO_Port, RELAY_K4_Pin, RESET); // release coil
+		HAL_Delay(5);
+		// SET SSR XBT4
+		HAL_GPIO_WritePin(SSR_XBT4_GPIO_Port, SSR_XBT4_Pin, SET); // set SSR latch
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(SSR_XBT4_GPIO_Port, SSR_XBT4_Pin, RESET); // release SSR latch
+		HAL_Delay(5);
+		return 0;
+	case 'd': // Set relay
+		// SET relay k5
+		HAL_GPIO_WritePin(RELAY_K5_GPIO_Port, RELAY_K5_Pin, SET); // set relay
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(RELAY_K5_GPIO_Port, RELAY_K5_Pin, RESET); // release coil
+		HAL_Delay(5);
+		return 0;
+	case 'e': // Set relay
+		// SET relay k6
+		HAL_GPIO_WritePin(RELAY_K6_GPIO_Port, RELAY_K6_Pin, SET); // set relay
+		HAL_Delay(10);
+		HAL_GPIO_WritePin(RELAY_K6_GPIO_Port, RELAY_K6_Pin, RESET); // release coil
+		HAL_Delay(5);
+		return 0;
+	case 'f': // Run motor 2 CW
+		HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 ); // Start STEP signal >> counter toggle to toggle every 20/1000 sec = 50hz
+		// motor
+		HAL_GPIO_WritePin(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, RESET); // disable driver
+		HAL_Delay(500); // wait for the motor to stop
+		HAL_GPIO_WritePin(DIR_GPIO_Port,DIR_Pin, SET); // set motor direction
+		HAL_GPIO_WritePin(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, SET); // enable driver to run motor
+		// read current
+		// should launch a timer here and stop it after X seconds
+		t0 = HAL_GetTick();
+
+		for (uint8_t ci = 1; ci < 20; ci++){
+			adcReading = 0;
+			for(uint8_t cj = 0; cj<100; cj++){
+				HAL_ADC_Start(&hadc2);
+				HAL_ADC_PollForConversion(&hadc2, 100);
+				adcReading += HAL_ADC_GetValue(&hadc2);
+				HAL_ADC_Stop(&hadc2);
+				HAL_Delay(1);
+			}
+			adcReading = adcReading/100;
+			motor_i = (uint16_t) (adcReading * 0.163 + 7.3581); // mA - opAmp G = 50, Rsense = 0.10 ohm
+
+			sprintf(adcmsg, "[AD# %d] Im_%d = %d mA\r\n", (int)adcReading, ci ,(int) motor_i);
+			HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
+			HAL_Delay(1000);
+			if((HAL_GetTick() - t0) > runtime) break;
+		}
+		HAL_GPIO_WritePin(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, RESET); // disable driver
+		HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_3 );
+
+		return 0;
+	case 'g': // Run motor 2 CCW
+		HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 ); // Start STEP signal >> counter toggle to toggle every 20/1000 sec = 50hz
+		// motor
+		HAL_GPIO_WritePin(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, RESET); // disable driver
+		HAL_Delay(500); // wait for the motor to stop
+		HAL_GPIO_WritePin(DIR_GPIO_Port,DIR_Pin, RESET); // set motor direction
+		HAL_GPIO_WritePin(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, SET); // enable driver to run motor
+		// read current
+		// should launch a timer here and stop it after X seconds
+
+		t0 = HAL_GetTick();
+
+		for (uint8_t ci = 1; ci < 20; ci++){
+			adcReading = 0;
+			for(uint8_t cj = 0; cj<100; cj++){
+				HAL_ADC_Start(&hadc2);
+				HAL_ADC_PollForConversion(&hadc2, 100);
+				adcReading += HAL_ADC_GetValue(&hadc2);
+				HAL_ADC_Stop(&hadc2);
+				HAL_Delay(1);
+			}
+			adcReading = adcReading/100;
+			motor_i = (uint16_t) (adcReading * 0.163 + 7.3581); // mA - opAmp G = 50, Rsense = 0.10 ohm
+
+			sprintf(adcmsg, "[AD# %d] Im_%d = %d mA\r\n", (int)adcReading, ci ,(int) motor_i);
+			HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
+			HAL_Delay(1000);
+			if((HAL_GetTick() - t0) > runtime) break;
+		}
+		HAL_GPIO_WritePin(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, RESET); // disable driver
+		HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_3 );
 		return 0;
 	default:
 		sprintf(msg, "\r\n> %d is not a valid option!");

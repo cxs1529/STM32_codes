@@ -65,6 +65,8 @@ void Error_Handler(void);
 #define SSR_XBT1_GPIO_Port GPIOC
 #define ENABLE_M1_Pin GPIO_PIN_2
 #define ENABLE_M1_GPIO_Port GPIOC
+#define ENABLE_M2_Pin GPIO_PIN_3
+#define ENABLE_M2_GPIO_Port GPIOC
 #define MUX_SELECT_Pin GPIO_PIN_2
 #define MUX_SELECT_GPIO_Port GPIOA
 #define DIR_Pin GPIO_PIN_4

@@ -51,14 +51,9 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  /* original
   HAL_GPIO_WritePin(GPIOC, SSR_XBT3_Pin|SSR_XBT2_Pin|SSR_XBT1_Pin|ENABLE_M1_Pin
-                          |DIR_Pin|RELAY_K7_Pin|RELAY_K1_Pin|RELAY_K2_Pin, GPIO_PIN_RESET);
-                          */
-  HAL_GPIO_WritePin(GPIOC, SSR_XBT3_Pin|SSR_XBT2_Pin|SSR_XBT1_Pin
-                          |DIR_Pin|RELAY_K7_Pin|RELAY_K1_Pin|RELAY_K2_Pin, GPIO_PIN_RESET);
-  // Start ENABLE_M1_Pin HIGH
-  HAL_GPIO_WritePin(GPIOC, ENABLE_M1_Pin, GPIO_PIN_SET);
+                          |ENABLE_M2_Pin|DIR_Pin|RELAY_K7_Pin|RELAY_K1_Pin
+                          |RELAY_K2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, MUX_SELECT_Pin|RELAY_CAL_RES_Pin|RELAY_CAL_CONT_Pin|RELAY_GND_COND_Pin
@@ -72,9 +67,11 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : PCPin PCPin PCPin PCPin
-                           PCPin PCPin PCPin PCPin */
+                           PCPin PCPin PCPin PCPin
+                           PCPin */
   GPIO_InitStruct.Pin = SSR_XBT3_Pin|SSR_XBT2_Pin|SSR_XBT1_Pin|ENABLE_M1_Pin
-                          |DIR_Pin|RELAY_K7_Pin|RELAY_K1_Pin|RELAY_K2_Pin;
+                          |ENABLE_M2_Pin|DIR_Pin|RELAY_K7_Pin|RELAY_K1_Pin
+                          |RELAY_K2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
