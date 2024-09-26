@@ -51,26 +51,29 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, SSR_XBT3_Pin|SSR_XBT2_Pin|SSR_XBT1_Pin|ENABLE_M1_Pin
-                          |ENABLE_M2_Pin|DIR_Pin|RELAY_K7_Pin|RELAY_K1_Pin
+  HAL_GPIO_WritePin(GPIOC, SSR_3_Pin|SSR_2_Pin|SSR_1_Pin|ENABLE_M1_Pin
+                          |ENABLE_M2_Pin|DIR_Pin|SSR_6_Pin|SSR_5_Pin
+                          |RELAY_RESET_3_Pin|RELAY_RESET_2_Pin|RELAY_K7_Pin|RELAY_K1_Pin
                           |RELAY_K2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, MUX_SELECT_Pin|RELAY_CAL_RES_Pin|RELAY_CAL_CONT_Pin|RELAY_GND_COND_Pin
+  HAL_GPIO_WritePin(GPIOA, MUX_SELECT_Pin|RELAY_K12_CAL_RES_Pin|RELAY_K11_CAL_CONT_Pin|RELAY_K9_K10_GND_COND_Pin
                           |RELAY_K8_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, LED_Pin|RELAY_K4_Pin|RELAY_K5_Pin|RELAY_K6_Pin
-                          |RELAY_RESET_1_Pin|SSR_XBT4_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, LED_Pin|SSR_8_Pin|SSR_7_Pin|RELAY_K4_Pin
+                          |RELAY_K5_Pin|RELAY_K6_Pin|RELAY_RESET_1_Pin|SSR_4_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : PCPin PCPin PCPin PCPin
                            PCPin PCPin PCPin PCPin
+                           PCPin PCPin PCPin PCPin
                            PCPin */
-  GPIO_InitStruct.Pin = SSR_XBT3_Pin|SSR_XBT2_Pin|SSR_XBT1_Pin|ENABLE_M1_Pin
-                          |ENABLE_M2_Pin|DIR_Pin|RELAY_K7_Pin|RELAY_K1_Pin
+  GPIO_InitStruct.Pin = SSR_3_Pin|SSR_2_Pin|SSR_1_Pin|ENABLE_M1_Pin
+                          |ENABLE_M2_Pin|DIR_Pin|SSR_6_Pin|SSR_5_Pin
+                          |RELAY_RESET_3_Pin|RELAY_RESET_2_Pin|RELAY_K7_Pin|RELAY_K1_Pin
                           |RELAY_K2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -79,7 +82,7 @@ void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : PAPin PAPin PAPin PAPin
                            PAPin */
-  GPIO_InitStruct.Pin = MUX_SELECT_Pin|RELAY_CAL_RES_Pin|RELAY_CAL_CONT_Pin|RELAY_GND_COND_Pin
+  GPIO_InitStruct.Pin = MUX_SELECT_Pin|RELAY_K12_CAL_RES_Pin|RELAY_K11_CAL_CONT_Pin|RELAY_K9_K10_GND_COND_Pin
                           |RELAY_K8_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -87,9 +90,9 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PBPin PBPin PBPin PBPin
-                           PBPin PBPin */
-  GPIO_InitStruct.Pin = LED_Pin|RELAY_K4_Pin|RELAY_K5_Pin|RELAY_K6_Pin
-                          |RELAY_RESET_1_Pin|SSR_XBT4_Pin;
+                           PBPin PBPin PBPin PBPin */
+  GPIO_InitStruct.Pin = LED_Pin|SSR_8_Pin|SSR_7_Pin|RELAY_K4_Pin
+                          |RELAY_K5_Pin|RELAY_K6_Pin|RELAY_RESET_1_Pin|SSR_4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

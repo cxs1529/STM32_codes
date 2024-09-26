@@ -57,12 +57,12 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define SSR_XBT3_Pin GPIO_PIN_13
-#define SSR_XBT3_GPIO_Port GPIOC
-#define SSR_XBT2_Pin GPIO_PIN_14
-#define SSR_XBT2_GPIO_Port GPIOC
-#define SSR_XBT1_Pin GPIO_PIN_15
-#define SSR_XBT1_GPIO_Port GPIOC
+#define SSR_3_Pin GPIO_PIN_13
+#define SSR_3_GPIO_Port GPIOC
+#define SSR_2_Pin GPIO_PIN_14
+#define SSR_2_GPIO_Port GPIOC
+#define SSR_1_Pin GPIO_PIN_15
+#define SSR_1_GPIO_Port GPIOC
 #define ENABLE_M1_Pin GPIO_PIN_2
 #define ENABLE_M1_GPIO_Port GPIOC
 #define ENABLE_M2_Pin GPIO_PIN_3
@@ -73,12 +73,24 @@ void Error_Handler(void);
 #define DIR_GPIO_Port GPIOC
 #define LED_Pin GPIO_PIN_1
 #define LED_GPIO_Port GPIOB
-#define RELAY_CAL_RES_Pin GPIO_PIN_8
-#define RELAY_CAL_RES_GPIO_Port GPIOA
-#define RELAY_CAL_CONT_Pin GPIO_PIN_11
-#define RELAY_CAL_CONT_GPIO_Port GPIOA
-#define RELAY_GND_COND_Pin GPIO_PIN_12
-#define RELAY_GND_COND_GPIO_Port GPIOA
+#define SSR_8_Pin GPIO_PIN_14
+#define SSR_8_GPIO_Port GPIOB
+#define SSR_7_Pin GPIO_PIN_15
+#define SSR_7_GPIO_Port GPIOB
+#define SSR_6_Pin GPIO_PIN_6
+#define SSR_6_GPIO_Port GPIOC
+#define SSR_5_Pin GPIO_PIN_7
+#define SSR_5_GPIO_Port GPIOC
+#define RELAY_RESET_3_Pin GPIO_PIN_8
+#define RELAY_RESET_3_GPIO_Port GPIOC
+#define RELAY_RESET_2_Pin GPIO_PIN_9
+#define RELAY_RESET_2_GPIO_Port GPIOC
+#define RELAY_K12_CAL_RES_Pin GPIO_PIN_8
+#define RELAY_K12_CAL_RES_GPIO_Port GPIOA
+#define RELAY_K11_CAL_CONT_Pin GPIO_PIN_11
+#define RELAY_K11_CAL_CONT_GPIO_Port GPIOA
+#define RELAY_K9_K10_GND_COND_Pin GPIO_PIN_12
+#define RELAY_K9_K10_GND_COND_GPIO_Port GPIOA
 #define RELAY_K8_Pin GPIO_PIN_15
 #define RELAY_K8_GPIO_Port GPIOA
 #define RELAY_K7_Pin GPIO_PIN_10
@@ -97,8 +109,8 @@ void Error_Handler(void);
 #define RELAY_K6_GPIO_Port GPIOB
 #define RELAY_RESET_1_Pin GPIO_PIN_8
 #define RELAY_RESET_1_GPIO_Port GPIOB
-#define SSR_XBT4_Pin GPIO_PIN_9
-#define SSR_XBT4_GPIO_Port GPIOB
+#define SSR_4_Pin GPIO_PIN_9
+#define SSR_4_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

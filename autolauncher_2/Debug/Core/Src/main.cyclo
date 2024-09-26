@@ -1,6 +1,6 @@
-../Core/Src/main.c:78:5:main	1
-../Core/Src/main.c:151:6:SystemClock_Config	4
-../Core/Src/main.c:191:6:printWelcomeMessage	1
-../Core/Src/main.c:198:6:readInput	1
-../Core/Src/main.c:209:9:processInput	31
-../Core/Src/main.c:511:6:Error_Handler	1
+../Core/Src/main.c:87:5:main	1
+../Core/Src/main.c:171:6:SystemClock_Config	4
+../Core/Src/main.c:211:6:printWelcomeMessage	1
+../Core/Src/main.c:220:6:readInput	1
+../Core/Src/main.c:233:9:processInput	38
+../Core/Src/main.c:880:6:Error_Handler	1
