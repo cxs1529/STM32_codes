@@ -57,8 +57,9 @@ void MX_GPIO_Init(void)
                           |RELAY_K2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, MUX_SELECT_Pin|RELAY_K12_CAL_RES_Pin|RELAY_K11_CAL_CONT_Pin|RELAY_K9_K10_GND_COND_Pin
-                          |RELAY_K8_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, ENABLE_M3_Pin|ENABLE_M4_Pin|MUX_SELECT_Pin|ENABLE_M5_Pin
+                          |ENABLE_M6_Pin|ENABLE_M7_Pin|ENABLE_M8_Pin|RELAY_K12_CAL_RES_Pin
+                          |RELAY_K11_CAL_CONT_Pin|RELAY_K9_K10_GND_COND_Pin|RELAY_K8_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LED_Pin|SSR_8_Pin|SSR_7_Pin|RELAY_K4_Pin
@@ -81,9 +82,11 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PAPin PAPin PAPin PAPin
-                           PAPin */
-  GPIO_InitStruct.Pin = MUX_SELECT_Pin|RELAY_K12_CAL_RES_Pin|RELAY_K11_CAL_CONT_Pin|RELAY_K9_K10_GND_COND_Pin
-                          |RELAY_K8_Pin;
+                           PAPin PAPin PAPin PAPin
+                           PAPin PAPin PAPin */
+  GPIO_InitStruct.Pin = ENABLE_M3_Pin|ENABLE_M4_Pin|MUX_SELECT_Pin|ENABLE_M5_Pin
+                          |ENABLE_M6_Pin|ENABLE_M7_Pin|ENABLE_M8_Pin|RELAY_K12_CAL_RES_Pin
+                          |RELAY_K11_CAL_CONT_Pin|RELAY_K9_K10_GND_COND_Pin|RELAY_K8_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
