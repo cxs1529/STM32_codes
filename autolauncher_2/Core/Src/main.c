@@ -64,8 +64,12 @@ const char menu_motors[] = "\r\n-- MOTORS --"
 		"\r\n>[a]-Run M1 CW+\r\n>[s]-Run M1 CCW-\r\n>[d]-Run M2 CW+\r\n>[f]-Run M2 CCW-"
 		"\r\n>[g]-Run M3 CW+\r\n>[h]-Run M3 CCW-\r\n>[j]-Run M4 CW+\r\n>[k]-Run M4 CCW-";
 
+/* Motor Control variables */
 typedef enum {CCW, CW} motorDir_t;
 enum motorLock_t {mFree, mLocked} motorLock; // motor mutex to ensure one motor runs at a time
+/* Relay Control variables*/
+typedef enum {XBT1, XBT2, XBT3, XBT4, XBT5, XBT6, XBT7, XBT8, CAL_GND, CAL_CONT, CAL_RES, RESET1, RESET2, RESET3} activeRelay_t;
+enum relayLock_t {reFree, reLocked} relayLock; // relay mutex to ensure one coil is driven at a time
 
 /* USER CODE END PV */
 
@@ -76,8 +80,9 @@ void printWelcomeMessage(void); // Print initial message
 char readInput(void); // wait for character
 uint8_t processInput(char option); // process the character received
 void drive_motor(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t motorDirection, uint32_t runtime ); // drive the desired motor
-void relay_init(void);
-void motor_init(void);
+void drive_relay(GPIO_TypeDef * relayPort, uint16_t relayPin, uint8_t onTime); // drive the desired relay
+void relay_init(void); // initialized relays in reset state
+void motor_init(void); // disable all motor enable pins
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -124,17 +129,19 @@ int main(void)
 
   // Initialize stepper motors
   motor_init();
+  motorLock = mFree;
 
   // initialize multiplexer
   HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, SET); // SET = UART-tx / RESET = Din from GPS
 
   // Initialize relays
   relay_init();
+  relayLock = reFree;
 
   // Options menu
   printWelcomeMessage();
-  char option = '\0';
-  uint8_t result = 0;
+  //char option = '\0';
+  //uint8_t result = 0;
 
   /* USER CODE END 2 */
 
@@ -142,8 +149,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  option = readInput();
-	  result = processInput(option);
+	  char option = readInput();
+	  uint8_t result = processInput(option);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -241,143 +248,222 @@ uint8_t processInput(char option){
 	case '0': // toggle green led
 		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 		return 0;
-	case '1': // Set relay XBT
-		// SET relay k1
-		HAL_GPIO_WritePin(RELAY_K1_GPIO_Port, RELAY_K1_Pin, SET); // set relay
-		HAL_Delay(8); // relays need 4 ms to set/reset
-		HAL_GPIO_WritePin(RELAY_K1_GPIO_Port, RELAY_K1_Pin, RESET); // release coil
-		HAL_Delay(2);
+	case '1': // Set relay XBT1
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K1_GPIO_Port, RELAY_K1_Pin, 10); // SET relay k1
+			drive_relay(SSR_1_GPIO_Port, SSR_1_Pin, 1); // SET SSR1
+			relayLock = reFree;
+		}
+
+//		HAL_GPIO_WritePin(RELAY_K1_GPIO_Port, RELAY_K1_Pin, SET); // set relay
+//		HAL_Delay(10); // relays need 4 ms to set/reset
+//		HAL_GPIO_WritePin(RELAY_K1_GPIO_Port, RELAY_K1_Pin, RESET); // release coil
+//		HAL_Delay(2);
 		// SET SSR1
-		HAL_GPIO_WritePin(SSR_1_GPIO_Port, SSR_1_Pin, SET); // set SSR latch
-		HAL_Delay(1); // latch need 300 ns to set/reset
-		HAL_GPIO_WritePin(SSR_1_GPIO_Port, SSR_1_Pin, RESET); // release SSR latch
-		HAL_Delay(1);
+//		HAL_GPIO_WritePin(SSR_1_GPIO_Port, SSR_1_Pin, SET); // set SSR latch
+//		HAL_Delay(1); // latch needs 300 ns to set/reset
+//		HAL_GPIO_WritePin(SSR_1_GPIO_Port, SSR_1_Pin, RESET); // release SSR latch
+//		HAL_Delay(1);
 		return 0;
-	case '2': // Set relay XBT
-		// SET relay k2
-		HAL_GPIO_WritePin(RELAY_K2_GPIO_Port, RELAY_K2_Pin, SET); // set relay
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_K2_GPIO_Port, RELAY_K2_Pin, RESET); // release coil
-		HAL_Delay(2);
-		// SET SSR2
-		HAL_GPIO_WritePin(SSR_2_GPIO_Port, SSR_2_Pin, SET); // set SSR latch
-		HAL_Delay(1);
-		HAL_GPIO_WritePin(SSR_2_GPIO_Port, SSR_2_Pin, RESET); // release SSR latch
-		HAL_Delay(1);
+	case '2': // Set relay XBT2
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K2_GPIO_Port, RELAY_K2_Pin, 10); // SET relay k1
+			drive_relay(SSR_2_GPIO_Port, SSR_2_Pin, 1); // SET SSR1
+			relayLock = reFree;
+		}
+//		// SET relay k2
+//		HAL_GPIO_WritePin(RELAY_K2_GPIO_Port, RELAY_K2_Pin, SET); // set relay
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_K2_GPIO_Port, RELAY_K2_Pin, RESET); // release coil
+//		HAL_Delay(2);
+//		// SET SSR2
+//		HAL_GPIO_WritePin(SSR_2_GPIO_Port, SSR_2_Pin, SET); // set SSR latch
+//		HAL_Delay(1);
+//		HAL_GPIO_WritePin(SSR_2_GPIO_Port, SSR_2_Pin, RESET); // release SSR latch
+//		HAL_Delay(1);
 		return 0;
-	case '3': // Set relay XBT
-		// SET relay k3
-		HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, SET); // set relay
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, RESET); // release coil
-		HAL_Delay(2);
-		// SET SSR3
-		HAL_GPIO_WritePin(SSR_3_GPIO_Port, SSR_3_Pin, SET); // set SSR latch
-		HAL_Delay(1);
-		HAL_GPIO_WritePin(SSR_3_GPIO_Port, SSR_3_Pin, RESET); // release SSR latch
-		HAL_Delay(1);
+	case '3': // Set relay XBT3
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K3_GPIO_Port, RELAY_K3_Pin, 10); // SET relay k3
+			drive_relay(SSR_3_GPIO_Port, SSR_3_Pin, 1); // SET SSR3
+			relayLock = reFree;
+		}
+//		// SET relay k3
+//		HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, SET); // set relay
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_K3_GPIO_Port, RELAY_K3_Pin, RESET); // release coil
+//		HAL_Delay(2);
+//		// SET SSR3
+//		HAL_GPIO_WritePin(SSR_3_GPIO_Port, SSR_3_Pin, SET); // set SSR latch
+//		HAL_Delay(1);
+//		HAL_GPIO_WritePin(SSR_3_GPIO_Port, SSR_3_Pin, RESET); // release SSR latch
+//		HAL_Delay(1);
 		return 0;
-	case '4': // Set relay XBT
-		// SET relay k4
-		HAL_GPIO_WritePin(RELAY_K4_GPIO_Port, RELAY_K4_Pin, SET); // set relay
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_K4_GPIO_Port, RELAY_K4_Pin, RESET); // release coil
-		HAL_Delay(2);
-		// SET SSR4
-		HAL_GPIO_WritePin(SSR_4_GPIO_Port, SSR_4_Pin, SET); // set SSR latch
-		HAL_Delay(1);
-		HAL_GPIO_WritePin(SSR_4_GPIO_Port, SSR_4_Pin, RESET); // release SSR latch
-		HAL_Delay(1);
+	case '4': // Set relay XBT4
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K4_GPIO_Port, RELAY_K4_Pin, 10); // SET relay k4
+			drive_relay(SSR_4_GPIO_Port, SSR_4_Pin, 1); // SET SSR4
+			relayLock = reFree;
+		}
+//		// SET relay k4
+//		HAL_GPIO_WritePin(RELAY_K4_GPIO_Port, RELAY_K4_Pin, SET); // set relay
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_K4_GPIO_Port, RELAY_K4_Pin, RESET); // release coil
+//		HAL_Delay(2);
+//		// SET SSR4
+//		HAL_GPIO_WritePin(SSR_4_GPIO_Port, SSR_4_Pin, SET); // set SSR latch
+//		HAL_Delay(1);
+//		HAL_GPIO_WritePin(SSR_4_GPIO_Port, SSR_4_Pin, RESET); // release SSR latch
+//		HAL_Delay(1);
 		return 0;
-	case '5': // Set relay XBT
-		// SET relay k5
-		HAL_GPIO_WritePin(RELAY_K5_GPIO_Port, RELAY_K5_Pin, SET); // set relay
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_K5_GPIO_Port, RELAY_K5_Pin, RESET); // release coil
-		HAL_Delay(2);
-		// SET SSR5
-		HAL_GPIO_WritePin(SSR_5_GPIO_Port, SSR_5_Pin, SET); // set SSR latch
-		HAL_Delay(1);
-		HAL_GPIO_WritePin(SSR_5_GPIO_Port, SSR_5_Pin, RESET); // release SSR latch
-		HAL_Delay(1);
+	case '5': // Set relay XBT5
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K5_GPIO_Port, RELAY_K5_Pin, 10); // SET relay k5
+			drive_relay(SSR_5_GPIO_Port, SSR_5_Pin, 1); // SET SSR5
+			relayLock = reFree;
+		}
+
+//		// SET relay k5
+//		HAL_GPIO_WritePin(RELAY_K5_GPIO_Port, RELAY_K5_Pin, SET); // set relay
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_K5_GPIO_Port, RELAY_K5_Pin, RESET); // release coil
+//		HAL_Delay(2);
+//		// SET SSR5
+//		HAL_GPIO_WritePin(SSR_5_GPIO_Port, SSR_5_Pin, SET); // set SSR latch
+//		HAL_Delay(1);
+//		HAL_GPIO_WritePin(SSR_5_GPIO_Port, SSR_5_Pin, RESET); // release SSR latch
+//		HAL_Delay(1);
 		return 0;
-	case '6': // Set relay XBT
-		// SET relay k6
-		HAL_GPIO_WritePin(RELAY_K6_GPIO_Port, RELAY_K6_Pin, SET); // set relay
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_K6_GPIO_Port, RELAY_K6_Pin, RESET); // release coil
-		HAL_Delay(2);
-		// SET SSR6
-		HAL_GPIO_WritePin(SSR_6_GPIO_Port, SSR_6_Pin, SET); // set SSR latch
-		HAL_Delay(1);
-		HAL_GPIO_WritePin(SSR_6_GPIO_Port, SSR_6_Pin, RESET); // release SSR latch
-		HAL_Delay(1);
+	case '6': // Set relay XBT6
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K6_GPIO_Port, RELAY_K6_Pin, 10); // SET relay k6
+			drive_relay(SSR_6_GPIO_Port, SSR_6_Pin, 1); // SET SSR6
+			relayLock = reFree;
+		}
+//		// SET relay k6
+//		HAL_GPIO_WritePin(RELAY_K6_GPIO_Port, RELAY_K6_Pin, SET); // set relay
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_K6_GPIO_Port, RELAY_K6_Pin, RESET); // release coil
+//		HAL_Delay(2);
+//		// SET SSR6
+//		HAL_GPIO_WritePin(SSR_6_GPIO_Port, SSR_6_Pin, SET); // set SSR latch
+//		HAL_Delay(1);
+//		HAL_GPIO_WritePin(SSR_6_GPIO_Port, SSR_6_Pin, RESET); // release SSR latch
+//		HAL_Delay(1);
 		return 0;
-	case '7': // Set relay XBT
-		// SET relay k7
-		HAL_GPIO_WritePin(RELAY_K7_GPIO_Port, RELAY_K7_Pin, SET); // set relay
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_K7_GPIO_Port, RELAY_K7_Pin, RESET); // release coil
-		HAL_Delay(2);
-		// SET SSR7
-		HAL_GPIO_WritePin(SSR_7_GPIO_Port, SSR_7_Pin, SET); // set SSR latch
-		HAL_Delay(1);
-		HAL_GPIO_WritePin(SSR_7_GPIO_Port, SSR_7_Pin, RESET); // release SSR latch
-		HAL_Delay(1);
+	case '7': // Set relay XBT7
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K7_GPIO_Port, RELAY_K7_Pin, 10); // SET relay k7
+			drive_relay(SSR_7_GPIO_Port, SSR_7_Pin, 1); // SET SSR7
+			relayLock = reFree;
+		}
+//		// SET relay k7
+//		HAL_GPIO_WritePin(RELAY_K7_GPIO_Port, RELAY_K7_Pin, SET); // set relay
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_K7_GPIO_Port, RELAY_K7_Pin, RESET); // release coil
+//		HAL_Delay(2);
+//		// SET SSR7
+//		HAL_GPIO_WritePin(SSR_7_GPIO_Port, SSR_7_Pin, SET); // set SSR latch
+//		HAL_Delay(1);
+//		HAL_GPIO_WritePin(SSR_7_GPIO_Port, SSR_7_Pin, RESET); // release SSR latch
+//		HAL_Delay(1);
 		return 0;
-	case '8': // Set relay XBT
-		// SET relay k8
-		HAL_GPIO_WritePin(RELAY_K8_GPIO_Port, RELAY_K8_Pin, SET); // set relay
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_K8_GPIO_Port, RELAY_K8_Pin, RESET); // release coil
-		HAL_Delay(2);
-		// SET SSR8
-		HAL_GPIO_WritePin(SSR_8_GPIO_Port, SSR_8_Pin, SET); // set SSR latch
-		HAL_Delay(1);
-		HAL_GPIO_WritePin(SSR_8_GPIO_Port, SSR_8_Pin, RESET); // release SSR latch
-		HAL_Delay(1);
+	case '8': // Set relay XBT8
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K8_GPIO_Port, RELAY_K8_Pin, 10); // SET relay k8
+			drive_relay(SSR_8_GPIO_Port, SSR_8_Pin, 1); // SET SSR8
+			relayLock = reFree;
+		}
+//		// SET relay k8
+//		HAL_GPIO_WritePin(RELAY_K8_GPIO_Port, RELAY_K8_Pin, SET); // set relay
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_K8_GPIO_Port, RELAY_K8_Pin, RESET); // release coil
+//		HAL_Delay(2);
+//		// SET SSR8
+//		HAL_GPIO_WritePin(SSR_8_GPIO_Port, SSR_8_Pin, SET); // set SSR latch
+//		HAL_Delay(1);
+//		HAL_GPIO_WritePin(SSR_8_GPIO_Port, SSR_8_Pin, RESET); // release SSR latch
+//		HAL_Delay(1);
 		return 0;
 	case '9': // Set relay GND
-		// SET relay k9 k10
-		HAL_GPIO_WritePin(RELAY_K9_K10_GND_COND_GPIO_Port, RELAY_K9_K10_GND_COND_Pin, SET); // set relay
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_K9_K10_GND_COND_GPIO_Port, RELAY_K9_K10_GND_COND_Pin, RESET); // release coil
-		HAL_Delay(2);
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K9_K10_GND_COND_GPIO_Port, RELAY_K9_K10_GND_COND_Pin, 10); // SET relay k9 k10
+			relayLock = reFree;
+		}
+//		// SET relay k9 k10
+//		HAL_GPIO_WritePin(RELAY_K9_K10_GND_COND_GPIO_Port, RELAY_K9_K10_GND_COND_Pin, SET); // set relay
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_K9_K10_GND_COND_GPIO_Port, RELAY_K9_K10_GND_COND_Pin, RESET); // release coil
+//		HAL_Delay(2);
 		return 0;
 	case 'q': // Set relay CAL CONT
-		// SET relay k11
-		HAL_GPIO_WritePin(RELAY_K11_CAL_CONT_GPIO_Port, RELAY_K11_CAL_CONT_Pin, SET); // set relay
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_K11_CAL_CONT_GPIO_Port, RELAY_K11_CAL_CONT_Pin, RESET); // release coil
-		HAL_Delay(2);
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K11_CAL_CONT_GPIO_Port, RELAY_K11_CAL_CONT_Pin, 10); // SET relay k11
+			relayLock = reFree;
+		}
+//		// SET relay k11
+//		HAL_GPIO_WritePin(RELAY_K11_CAL_CONT_GPIO_Port, RELAY_K11_CAL_CONT_Pin, SET); // set relay
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_K11_CAL_CONT_GPIO_Port, RELAY_K11_CAL_CONT_Pin, RESET); // release coil
+//		HAL_Delay(2);
 		return 0;
 	case 'w': // Set relay CAL RES
-		// SET relay k12
-		HAL_GPIO_WritePin(RELAY_K12_CAL_RES_GPIO_Port, RELAY_K12_CAL_RES_Pin, SET); // set relay
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_K12_CAL_RES_GPIO_Port, RELAY_K12_CAL_RES_Pin, RESET); // release coil
-		HAL_Delay(2);
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_K12_CAL_RES_GPIO_Port, RELAY_K12_CAL_RES_Pin, 10); // SET relay k12
+			relayLock = reFree;
+		}
+//		// SET relay k12
+//		HAL_GPIO_WritePin(RELAY_K12_CAL_RES_GPIO_Port, RELAY_K12_CAL_RES_Pin, SET); // set relay
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_K12_CAL_RES_GPIO_Port, RELAY_K12_CAL_RES_Pin, RESET); // release coil
+//		HAL_Delay(2);
 		return 0;
 	case 'e': // Reset 1 (1st half)
-		// RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
-		HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, SET); // reset relay and SSR
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, RESET); // release reset coil
-		HAL_Delay(2);
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, 10); // RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
+			relayLock = reFree;
+		}
+//		// RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
+//		HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, SET); // reset relay and SSR
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, RESET); // release reset coil
+//		HAL_Delay(2);
 		return 0;
 	case 'r': // Reset 2 (2nd half)
-		// RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
-		HAL_GPIO_WritePin(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, SET); // reset relay and SSR
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, RESET); // release reset coil
-		HAL_Delay(2);
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, 10); // RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
+			relayLock = reFree;
+		}
+//		// RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
+//		HAL_GPIO_WritePin(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, SET); // reset relay and SSR
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, RESET); // release reset coil
+//		HAL_Delay(2);
 		return 0;
 	case 't': // Reset 3 (aux relays)
-		// RESET relay k9, k10, k11, k12
-		HAL_GPIO_WritePin(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, SET); // reset relay and SSR
-		HAL_Delay(8);
-		HAL_GPIO_WritePin(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, RESET); // release reset coil
-		HAL_Delay(2);
+		if(relayLock == reFree){
+			relayLock = reLocked;
+			drive_relay(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, 10); // RESET relay k9, k10, k11, k12
+			relayLock = reFree;
+		}
+//		// RESET relay k9, k10, k11, k12
+//		HAL_GPIO_WritePin(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, SET); // reset relay and SSR
+//		HAL_Delay(8);
+//		HAL_GPIO_WritePin(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, RESET); // release reset coil
+//		HAL_Delay(2);
 		return 0;
 	case 'y': // read ADC Vin
 		// take 10 an average of samples
@@ -389,7 +475,7 @@ uint8_t processInput(char option){
 			HAL_Delay(1);
 		}
 		adcReading = adcReading/10;
-		vin = adcReading * 0.0083 + 0.3963; // 15.23
+		vin = adcReading * 0.0083 + 0.3963; // 15.23 store coef. in eeprom
 		// get 1 decimal
 		int dec = (int)(vin * 10 - ((int)vin * 10)); // 152 - 150 = 2
 
@@ -522,22 +608,32 @@ uint8_t processInput(char option){
 
 
 void relay_init(void){
-	  // RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
-	  HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, SET); // reset relay
-	  HAL_Delay(10);
-	  HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, RESET); // release reset coil
-	  HAL_Delay(5);
-	  // RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
-	  HAL_GPIO_WritePin(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, SET); // reset relay
-	  HAL_Delay(10);
-	  HAL_GPIO_WritePin(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, RESET); // release reset coil
-	  HAL_Delay(5);
-	  // RESET relay k9, k10, k11, k12 (GND, calibration and continuity circuit)
-	  HAL_GPIO_WritePin(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, SET); // reset relay
-	  HAL_Delay(10);
-	  HAL_GPIO_WritePin(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, RESET); // release reset coil
-	  HAL_Delay(5);
+	drive_relay(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, 10);  // RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
+//	  HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, SET); // reset relay
+//	  HAL_Delay(10);
+//	  HAL_GPIO_WritePin(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, RESET); // release reset coil
+//	  HAL_Delay(5);
+	drive_relay(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, 10); // RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
+//	  HAL_GPIO_WritePin(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, SET); // reset relay
+//	  HAL_Delay(10);
+//	  HAL_GPIO_WritePin(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, RESET); // release reset coil
+//	  HAL_Delay(5);
+	drive_relay(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, 10); // RESET relay k9, k10, k11, k12 (GND, calibration and continuity circuit)
+//	  HAL_GPIO_WritePin(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, SET); // reset relay
+//	  HAL_Delay(10);
+//	  HAL_GPIO_WritePin(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, RESET); // release reset coil
+//	  HAL_Delay(5);
 }
+
+
+void drive_relay(GPIO_TypeDef * relayPort, uint16_t relayPin, uint8_t onTime){
+	// SET relay k
+	HAL_GPIO_WritePin(relayPort, relayPin, SET); // set
+	HAL_Delay(onTime); // time coil is driven in ms
+	HAL_GPIO_WritePin(relayPort, relayPin, RESET); // release
+	HAL_Delay(2);
+}
+
 
 void motor_init(void){
 	  HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // start disabled
