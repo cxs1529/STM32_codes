@@ -3,3 +3,7 @@
 
 # ignore test directories 
 test/
+
+# ignore debug directories created by Cube IDE
+*/Debug/*
+

@@ -34,25 +34,27 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef enum {CCW, CW} motorDir_t; // Relay Control variables
-//typedef enum {XBT1, XBT2, XBT3, XBT4, XBT5, XBT6, XBT7, XBT8, CAL_GND, CAL_CONT, CAL_RES, RESET1, RESET2, RESET3} activeRelay_t;
-
+typedef enum {MUX_GPS, MUX_STM32} mux_t; // TX from GPS MUX=0, TX from microcontroller MUX=1
 
 typedef struct {
 	char serialNumber[2]; // 2 digit autolauncher S/N
-	char tubeCount[1]; // 6 or 8
-	char launcherType[1]; // R regular or X extended (amvereseasv6.0, v8.0, v8.1 (long) )
+	char tubeCount; // 6 or 8
+	char launcherType; // R regular or X extended (amvereseasv6.0, v8.0, v8.1 (long) )
 	char pcbSerial[3]; // PCB serialnum ALB3-XXX
 } launcher_t;
 
 typedef struct {
 	uint16_t size; // memory size in bytes
 	uint16_t maxAddress; // memory address 0x00 - maxAddress >> 0x7F
+	char configured;
 } eeprom_t;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define RXECHO 1
+#define RXECHO 1 // echo the character sent to AL 1 on, 0 off
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -66,13 +68,12 @@ typedef struct {
 /* USER CODE BEGIN PV */
 enum motorLock_t {mFree, mLocked} motorLock = mFree; // motor mutex to ensure one motor runs at a time
 enum relayLock_t {reFree, reLocked} relayLock = reFree; // relay mutex to ensure one coil is driven at a time
-
-launcher_t launcher = {"NN", "N", "N", "NNN"};
-
-char configed = '\0';
-
 enum rxStatus_t {idle, active} rxStatus = idle; // flag, indicate if a new char was sent over serial. Set to NEW_CHAR in the UART interrupt callback, and IDLE after processing command
-char rxChar[1] = "\0";
+enum activeMenu_t {mainMenu, configMenu} activeMenu = mainMenu;
+launcher_t launcher = {"01", "8", "R", "001"};
+eeprom_t eeprom = {1024, 0x7F, '|'};
+char rxChar[1] = "\0"; // UART1 receive buffer from computer, a char will be stored here with UART interrupt
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -80,15 +81,17 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
 //char read_input(uart_echo_t echo); // read incoming character with interrupt
-void process_input(char option);
-uint8_t processInput(char option); // process the character received
+void main_process_input(char option); // process the character received if in main menu
+void config_process_input(char option); // process the character received if in config menu
+uint8_t processInput(char option); // process the character received *NOT IN USE*
 void drive_motor(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t motorDirection, uint32_t runtime ); // drive the desired motor
 void drive_relay(GPIO_TypeDef * relayPort, uint16_t relayPin, uint8_t onTime); // drive the desired relay
 void relay_init(void); // initialized relays in reset state
 void motor_init(void); // disable all motor enable pins
-void print(char text[]);
+int _write(int file, char *ptr, int len); // redirect printf std output to uart1
 void menu_init(void);
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart);
+void multiplexer_set(mux_t select);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -137,35 +140,42 @@ int main(void)
 
   // Initialize stepper motors
   motor_init();
-  motorLock = mFree;
 
   // initialize multiplexer
-  HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, SET); // SET = UART-tx / RESET = Din from GPS
+  multiplexer_set(MUX_STM32);
 
   // Initialize relays
   relay_init();
-  relayLock = reFree;
 
   // menu init
   menu_init();
-  HAL_UART_Receive_IT(&huart1, rxChar, 1);
+
+  // enable receive interrupt
+  HAL_UART_Receive_IT(&huart1, rxChar, 1); // enable UART receive interrupt, store received char in rxChar buffer
+
+  // display main menu at startup
+  status_message();
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  //rxChar = read_input(ECHO_ON);
 
-	  if(active == rxStatus){ // set to active with interrupt
-		  //process_input(rxChar); // go to main switch case menu
+	  if(active == rxStatus){ // set to active with UART RX interrupt
+		  if( mainMenu == activeMenu){
+			  main_process_input(rxChar[0]); // go to main switch case menu
+		  } else if ( configMenu == activeMenu){
+			  config_process_input(rxChar[0]);
+		  }
+
 		  rxStatus = idle;
 	  }
-	  // do some idle routine here
 	  // monitor voltage and send alarm if it's below a threshold
-	  HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-	  HAL_Delay(1000);
-
+	  //HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+	  //HAL_Delay(1000);
 
     /* USER CODE END WHILE */
 
@@ -218,18 +228,18 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+
 /***************************************** START AUTOLAUNCHER FUNCTIONS *****************************************/
 
-void menu_init(void){
-	// print status message and anything else required to initialize
-	status_message();
+void multiplexer_set(mux_t select){
+	HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, select); // SET = UART-tx / RESET = Din from GPS
 }
 
-/* Wrapper, Send a string to the terminal */
-void print( char text[]){
-	HAL_UART_Transmit_IT(&huart1, text, sizeof(text));
+int _write(int file, char *ptr, int len){
+	HAL_UART_Transmit(&huart1, (uint8_t *) ptr, len, HAL_MAX_DELAY);
+	return len;
 }
-
 
 /* Initialize autolauncher parameters */
 void parameter_init(void){
@@ -238,90 +248,100 @@ void parameter_init(void){
 }
 
 
-/* Read user input and return the option selected 1-2-3*/
-//char read_input(uart_echo_t echo){
-//	char buffer[1];
-//
-//	HAL_UART_Receive_IT(&huart1, buffer, 1); // always call again to reactivate UART interrupt
-//	if (ECHO_ON == echo){
-//		HAL_UART_Transmit(&huart1, buffer, 1, 100); // echo
-//	}
-//	return buffer[0];
-//}
-
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart){
-	//char temp[1];
-//	if(huart->Instance == USART1){
-//		temp[0] = rxChar[0];
-//		HAL_UART_Transmit_IT(&huart1, temp, 1);
-//	}
-//	HAL_UART_Receive_IT(&huart1, rxChar, 1);
+	uint8_t txBuffer[10] = {'\0'};
+
 	if(huart->Instance == USART1){ // check that uart1 triggered the interrupt callback
 		rxStatus = active;
 		if(RXECHO == 1){
-			//temp[0] = rxChar[0];
-			HAL_UART_Transmit_IT(&huart1, rxChar, 1);
+			sprintf(txBuffer,"\r\n>> %c\r\n", rxChar[0]);
+			HAL_UART_Transmit(&huart1, (const uint8_t *) txBuffer, sizeof(txBuffer), 100);
 		}
-		HAL_UART_Receive_IT(&huart1, rxChar, 1); // reactivate rx interrupt
+		HAL_UART_Receive_IT(&huart1, (uint8_t *) rxChar, 1); // reactivate rx interrupt
 	}
 }
 
-void process_input(char option){
-	char msg[50];
-	sprintf(msg, "\r\n> Executing OPTION %d...\r\n",option);
-	print(msg);
+void main_process_input(char option){
+	printf("\r\n> Executing OPTION %c...\r\n", option);
+	if (option == 'M') status_message();
+
+}
+
+void config_process_input(char option){
+
 }
 
 
-
 void status_message() {
-    print("\n\r");
-    print("=========================================\n\r");
-    print("|  AOML auto launcher board version 3.0 |\n\r");
-    print("|  Firmware version 2024.mm.dd.hhmm     |\n\r");
-    print("=========================================\n\r");
-    print("|    Model #ALV3.0      S/N ");
-//    print_serial_number();
-//    print("       |\n\r");
-    print("=========================================\n\r");
-    print("|               COMMANDS                |\n\r");
-//    if (configed != '|') {
-//        print("|!!! YOU MUST ASSIGN A SERIAL NUMBER !!!|\n\r");
-//    }
-    print("=========================================\n\r");
-    print("| Connect  cal Sim BT  0                |\n\r");
-//    if (tubeCount == '6') {
-//        print("| Connect  XBT 1-6     1,2,3,4,5,6      |\n\r");
-//        print("| Extend   Pin 1-6     U,V,W,X,Y,Z      |\n\r");
-//        print("| Retract  Pin 1-6     A,B,C,D,E,F      |\n\r");
-//    } else {
-//
-//        print("| Connect  XBT 1-8     1,2,3,4,5,6,7,8  |\n\r");
-//        print("| Extend   Pin 1-8     U,V,W,X,Y,Z,S,T  |\n\r");
-//        print("| Retract  Pin 1-8     A,B,C,D,E,F,H,I  |\n\r");
-//    }
-    print("| Unground   XBT       G                |\n\r");
-    print("| Calibrate on         K                |\n\r");
-    print("| Cal resistor         L                |\n\r");
-    print("| Reset Relays         R                |\n\r");
-    print("| Print serial number  s                |\n\r");
-    print("| This Menu            M                |\n\r");
-    print("=========================================\n\r");
+    printf("\r\n\n\r");
+    printf("=========================================\n\r");
+    printf("|  AOML auto launcher board version 3.0 |\n\r");
+    printf("|  Firmware version 2024.mm.dd.hhmm     |\n\r");
+    printf("=========================================\n\r");
+    printf("|    Model #ALV3.0      S/N ");
+    print_serial_number();
+    printf("       |\n\r");
+    printf("=========================================\n\r");
+    printf("|               COMMANDS                |\n\r");
+    if (eeprom.configured != '|') {
+        printf("| ERROR, NO SERIAL NUMBER ASSIGNED  |\n\r");
+    }
+    printf("=========================================\n\r");
+    printf("| Connect  cal Sim BT  0                |\n\r");
+    if (launcher.tubeCount == '6') {
+        printf("| Connect  XBT 1-6     1,2,3,4,5,6      |\n\r");
+        printf("| Extend   Pin 1-6     U,V,W,X,Y,Z      |\n\r");
+        printf("| Retract  Pin 1-6     A,B,C,D,E,F      |\n\r");
+    } else if (launcher.tubeCount == '8') {
+
+        printf("| Connect  XBT 1-8     1,2,3,4,5,6,7,8  |\n\r");
+        printf("| Extend   Pin 1-8     U,V,W,X,Y,Z,S,T  |\n\r");
+        printf("| Retract  Pin 1-8     A,B,C,D,E,F,H,I  |\n\r");
+    } else {
+    	printf("| ERROR, NO TUBE COUNT!!     	        |\n\r");
+    }
+    printf("| Unground   XBT       G                |\n\r");
+    printf("| Calibrate on         K                |\n\r");
+    printf("| Cal resistor         L                |\n\r");
+    printf("| Reset Relays         R                |\n\r");
+    printf("| Print serial number  s                |\n\r");
+    printf("| This Menu            M                |\n\r");
+    printf("=========================================\n\r");
+    printf("\r\n\n\r");
+}//end status_message
+
+
+void config_menu() {
+    printf("\n\r");
+    printf("=========================================\n\r");
+    printf("|  AOML auto launcher config menu       |\n\r");
+    printf("=========================================\n\r");
+    printf("|    Model #ALV2        S/N ");
+    print_serial_number();
+    printf("       |\n\r");
+    printf("=========================================\n\r");
+    printf("|               COMMANDS                |\n\r");
+    printf("=========================================\n\r");
+    printf("| Set tubes & S/N      1                |\n\r");
+    printf("| This Menu            M                |\n\r");
+    printf("| Extend all   pins    J                |\n\r");
+    printf("| Retract all  pins    N                |\n\r");
+    printf("| Grease pins  mode    G                |\n\r");
+    printf("| Quit config menu     Q                |\n\r");
+    printf("=========================================\n\r");
 }//end status_message
 
 void print_serial_number(void){
-	char msg[5];
-
-    if(configed == '|'){
-
-    	sprintf(msg, "AL%c%s", launcher.launcherType, launcher.serialNumber);
-    	print(msg);
-    } else {
-        if (launcher.tubeCount == '6')
-            print("AL6XX");
-        else
-            print("ALRXX");
-    }
+	printf( "AL%c%s", launcher.launcherType[0], launcher.serialNumber);
+//    if(configed == '|'){
+//    	printf( "AL%c%s", launcher.launcherType[0], launcher.serialNumber);
+//
+//    } else {
+//        if (launcher.tubeCount[0] == '6')
+//            print("AL6XX");
+//        else
+//            print("ALRXX");
+//    }
 }
 
 
