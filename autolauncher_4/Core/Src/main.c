@@ -39,7 +39,7 @@ typedef enum {MUX_GPS, MUX_STM32} mux_t; // TX from GPS MUX=0, TX from microcont
 typedef struct {
 	char serialNumber[2]; // 2 digit autolauncher S/N
 	char tubeCount; // 6 or 8
-	char launcherType; // R regular or X extended (amvereseasv6.0, v8.0, v8.1 (long) )
+	char type; // R regular or X extended (amvereseasv6.0, v8.0, v8.1 (long) )
 	char pcbSerial[3]; // PCB serialnum ALB3-XXX
 } launcher_t;
 
@@ -69,11 +69,11 @@ typedef struct {
 enum motorLock_t {mFree, mLocked} motorLock = mFree; // motor mutex to ensure one motor runs at a time
 enum relayLock_t {reFree, reLocked} relayLock = reFree; // relay mutex to ensure one coil is driven at a time
 enum rxStatus_t {idle, active} rxStatus = idle; // flag, indicate if a new char was sent over serial. Set to NEW_CHAR in the UART interrupt callback, and IDLE after processing command
-enum activeMenu_t {mainMenu, configMenu} activeMenu = mainMenu;
-launcher_t launcher = {"01", "8", "R", "001"};
-eeprom_t eeprom = {1024, 0x7F, '|'};
-char rxChar[1] = "\0"; // UART1 receive buffer from computer, a char will be stored here with UART interrupt
-
+enum activeMenu_t {mainMenu, configMenu, settingParams} activeMenu = mainMenu;
+launcher_t launcher = {"00", '?', '?', "000"};
+eeprom_t eeprom = {1024, 0x7F, '\0'};
+char rxBuffer[1] = "\0"; // UART1 receive buffer from computer, a char will be stored here with UART interrupt
+char rxChar = '\0'; // UART1 receive character, == xBuffer[0]
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -148,10 +148,10 @@ int main(void)
   relay_init();
 
   // menu init
-  menu_init();
+  //menu_init();
 
   // enable receive interrupt
-  HAL_UART_Receive_IT(&huart1, rxChar, 1); // enable UART receive interrupt, store received char in rxChar buffer
+  HAL_UART_Receive_IT(&huart1, rxBuffer, 1); // enable UART receive interrupt, store received char in rxChar buffer
 
   // display main menu at startup
   status_message();
@@ -166,16 +166,16 @@ int main(void)
 
 	  if(active == rxStatus){ // set to active with UART RX interrupt
 		  if( mainMenu == activeMenu){
-			  main_process_input(rxChar[0]); // go to main switch case menu
+			  main_process_input(rxChar); // go to main switch case menu
 		  } else if ( configMenu == activeMenu){
-			  config_process_input(rxChar[0]);
+			  config_process_input(rxChar);
 		  }
 
 		  rxStatus = idle;
 	  }
 	  // monitor voltage and send alarm if it's below a threshold
 	  //HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-	  //HAL_Delay(1000);
+	  HAL_Delay(100);
 
     /* USER CODE END WHILE */
 
@@ -236,8 +236,10 @@ void multiplexer_set(mux_t select){
 	HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, select); // SET = UART-tx / RESET = Din from GPS
 }
 
+/* Redirect std output to uart with printf */
 int _write(int file, char *ptr, int len){
 	HAL_UART_Transmit(&huart1, (uint8_t *) ptr, len, HAL_MAX_DELAY);
+
 	return len;
 }
 
@@ -247,28 +249,305 @@ void parameter_init(void){
 
 }
 
-
+/* UART Receive interrupt callback, set rxStatus flag for new char received and echo, re-enable uart rx interrupt*/
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart){
-	uint8_t txBuffer[10] = {'\0'};
-
+	//uint8_t txBuffer[10] = {'\0'};
 	if(huart->Instance == USART1){ // check that uart1 triggered the interrupt callback
+		rxChar = rxBuffer[0];
 		rxStatus = active;
+
 		if(RXECHO == 1){
-			sprintf(txBuffer,"\r\n>> %c\r\n", rxChar[0]);
-			HAL_UART_Transmit(&huart1, (const uint8_t *) txBuffer, sizeof(txBuffer), 100);
+			printf("%c", rxChar);
+			//sprintf(txBuffer,"\r\n>> %c\r\n", rxChar);
+			//HAL_UART_Transmit(&huart1, (const uint8_t *) txBuffer, sizeof(txBuffer), 100);
 		}
-		HAL_UART_Receive_IT(&huart1, (uint8_t *) rxChar, 1); // reactivate rx interrupt
+		HAL_UART_Receive_IT(&huart1, (uint8_t *) rxBuffer, 1); // reactivate rx interrupt
 	}
 }
 
+/* Process char received while in Main menu */
 void main_process_input(char option){
 	printf("\r\n> Executing OPTION %c...\r\n", option);
-	if (option == 'M') status_message();
-
+	//if (option == 'M') status_message();
+	switch (option){
+		// Connect XBT pins
+    case '0':
+        //engage calibration resistor
+    	printf("unground_xbt(),calibration_resistor(),calibrate_on()");
+//        unground_xbt();
+//        calibration_resistor();
+//        calibrate_on();
+        break;
+    case '1':
+        //connect_xbt_pin('1');
+        printf("connect_xbt_pin(1)");
+        break;
+    case '2':
+        //connect_xbt_pin('2');
+        printf("connect_xbt_pin(2)");
+        break;
+    case '3':
+        //connect_xbt_pin('3');
+        printf("connect_xbt_pin(3)");
+        break;
+    case '4':
+        //connect_xbt_pin('4');
+        printf("connect_xbt_pin(4)");
+        break;
+    case '5':
+        //connect_xbt_pin('5');
+        printf("connect_xbt_pin(5)");
+        break;
+    case '6':
+        //connect_xbt_pin('6');
+        printf("connect_xbt_pin(6)");
+        break;
+    case '7':
+        if (launcher.tubeCount = '8'){
+            //connect_xbt_pin('7');
+            printf("connect_xbt_pin(7)");
+        } else {
+        	printf("Error, tube 7 not available\r\n");
+        }
+        break;
+    case '8':
+        if (launcher.tubeCount = '8'){
+        	//connect_xbt_pin('8');
+        	printf("connect_xbt_pin(8)");
+        } else {
+        	printf("Error, tube 8 not available\r\n");
+        }
+        break;
+        //EXTEND PINS
+    case 'U':
+        //extend_pin('1');
+    	printf("extend_pin(1)");
+        break;
+    case 'V':
+        //extend_pin('2');
+        printf("extend_pin(1)");
+        break;
+    case 'W':
+        //extend_pin('3');
+        printf("extend_pin(1)");
+        break;
+    case 'X':
+        //extend_pin('4');
+        printf("extend_pin(1)");
+        break;
+    case 'Y':
+        //extend_pin('5');
+        printf("extend_pin(1)");
+        break;
+    case 'Z':
+        //extend_pin('6');
+        printf("extend_pin(1)");
+        break;
+    case 'S':
+        if (launcher.tubeCount = '8'){
+        	//extend_pin('7');
+        	printf("extend_pin(1)");
+        } else {
+        	printf("Error, tube 7 not available\r\n");
+        }
+        break;
+    case 'T':
+        if (launcher.tubeCount = '8'){
+        	//extend_pin('8');
+        	printf("extend_pin(1)");
+        } else {
+        	printf("Error, tube 8 not available\r\n");
+        }
+        break;
+        //RETRACT PINS
+    case 'A':
+        //retract_pin('1');
+    	printf("retract_pin(1)");
+        break;
+    case 'B':
+        //retract_pin('2');
+        printf("retract_pin(2)");
+        break;
+    case 'C':
+        //retract_pin('3');
+        printf("retract_pin(1)");
+        break;
+    case 'D':
+        //retract_pin('4');
+        printf("retract_pin(4)");
+        break;
+    case 'E':
+        //retract_pin('5');
+        printf("retract_pin(5)");
+        break;
+    case 'F':
+        //retract_pin('6');
+        printf("retract_pin(6)");
+        break;
+    case 'H':
+        if (launcher.tubeCount = '8'){
+        	//retract_pin('7');
+        	printf("retract_pin(7)");
+        } else {
+        	printf("Error, tube 7 not available\r\n");
+        }
+        break;
+    case 'I':
+        if (launcher.tubeCount = '8'){
+        	//retract_pin('8');
+        	printf("retract_pin(8)");
+        } else {
+        	printf("Error, tube 8 not available\r\n");
+        }
+        break;
+    case 'K':
+        //calibrate_on();
+        printf("calibrate_on()");
+        break;
+    case 'R':
+        //reset_relay();
+        printf("reset_relay()");
+        break;
+    case 'L':
+        //calibration_resistor();
+        printf("calibration_resistor()");
+        break;
+    case 'G':
+        //unground_xbt();
+        printf("unground_xbt()");
+        break;
+    case 'M':
+        status_message();
+        break;
+    case '~':
+        config_menu();
+        activeMenu = configMenu; // set configuration menu flag
+        break;
+    case 's':
+        print_serial_number();
+        printf("\n\r");
+        break;
+    default:
+        printf("\r\n** Unrecognized command!!** \r\n");
+        break;
+	}
 }
 
+/* Process char received while in configuration menu */
 void config_process_input(char option){
+    switch (option) {
+        case 'Q':
+            printf("\n\rLeaving Auto launcher configuration menu\n\r");
+            activeMenu = mainMenu; // set active menu flag to main menu
+            status_message();
+            break;
+        case 'M':
+            config_menu();
+            break;
+        case '1':
+        	activeMenu = settingParams; // set active menu so all uart RX chars are processed here
+            printf("\n\rEnter AL tube count [6] or [8]: ");
+            while(1){
+            	if(rxStatus == active){
+            		if(rxChar == '6' || rxChar == '8'){
+            			launcher.tubeCount = rxChar;
+            			break;
+            		} else {
+            			printf("\r\nError, Enter 6 or 8 !\r\n");
+            			printf("\n\rEnter AL tube count [6] or [8]: ");
+            		}
+            		rxStatus = idle;
+            	}
+            }
 
+            //numOfTubes = currentChar;
+            //launcherLength = numOfTubes;
+
+            if(launcher.tubeCount == '8'){
+                printf("Enter launcher type, [X] extended or [R] regular: ");
+                while(1){
+                	if(rxStatus == active){
+                		if(rxChar == 'X' || rxChar == 'R'){
+                			launcher.type = rxChar;
+                			break;
+                		} else {
+                			printf("\r\nError, Enter X or R !\r\n");
+                			printf("Enter launcher type, [X] extended or [R] regular: ");
+                		}
+                		rxStatus = idle;
+                	}
+                }
+
+            }
+            //launcherLength = currentChar;
+
+
+    		printf("Enter a two-digit autolauncher serial number [0-99]: ");
+            //currentChar = '\0';
+            //printf("The number part of the serial number has two digits\n\r");
+            //printf("Enter a number from \"0\" to \"9\" for the first digit\n\r");
+    		for(uint8_t i = 0; i < 2; i++){
+    			while(1){
+					if(rxStatus == active){
+						if(isdigit(rxChar) > 0){ // check it's a number to store it
+							launcher.serialNumber[i] = rxChar;
+							break;
+						} else {
+							printf("Enter only numbers!\r\n");
+							if(i == 1){
+								printf("Enter a two-digit autolauncher serial number [0-99]: %c", launcher.serialNumber[0]);
+							} else { // if i = 0
+								printf("Enter a two-digit autolauncher serial number [0-99]: ");
+							}
+						}
+						rxStatus = idle;
+    				}
+    			}
+    		}
+//
+//            while (!is_a_number(currentChar)) {
+//                /*block until a number is received*/
+//            }
+//            num1 = currentChar;
+//            currentChar = '\0';
+//            printf("Enter a number from \"0\" to \"9\" for the second digit\n\r");
+//
+//            while (!is_a_number(currentChar)) {
+//                /*block until a number is received*/
+//            }
+//            num2 = currentChar;
+//            currentChar = '\0';
+            eeprom.configured = '|';
+            //numOfSavedTubes = numOfTubes;
+            printf("\r\nNew autolauncher configuration: Tubes: %c | Type: %c | Serial: %s\r\n", launcher.tubeCount, launcher.type);
+            // store parameters in eeprom
+            printf("Settings saved!\r\n");
+//            eeprom_write(0x00, numOfTubes);
+//            eeprom_write(0x01, launcherLength);
+//            eeprom_write(0x02, num1);
+//            eeprom_write(0x03, num2);
+//            eeprom_write(0x04, configed);
+
+            activeMenu = configMenu;
+            config_menu();
+            break;
+        case 'J':
+            //extend_all_pins();
+        	printf("extend_all_pins()\r\n");
+            break;
+        case 'N':
+            //retract_all_pins();
+        	printf("retract_all_pins()\r\n");
+            break;
+        case 'G':
+            printf("\n\rSend the \"@\" symbol repeatedly to exit grease pins mode\n\r");
+            //grease_pins();
+            printf("grease_pins();");
+            break;
+        default:
+        	printf("\r\n** Unrecognized command!!** \r\n");
+            break;
+    }
 }
 
 
@@ -332,16 +611,15 @@ void config_menu() {
 }//end status_message
 
 void print_serial_number(void){
-	printf( "AL%c%s", launcher.launcherType[0], launcher.serialNumber);
-//    if(configed == '|'){
-//    	printf( "AL%c%s", launcher.launcherType[0], launcher.serialNumber);
-//
-//    } else {
-//        if (launcher.tubeCount[0] == '6')
-//            print("AL6XX");
-//        else
-//            print("ALRXX");
-//    }
+	//printf( "AL%c%s", launcher.type[0], launcher.serialNumber);
+    if(eeprom.configured == '|'){
+    	printf( "AL%c%s", launcher.type, launcher.serialNumber);
+    } else {
+        if (launcher.tubeCount == '6')
+            printf("AL6XX");
+        else
+            printf("ALRXX");
+    }
 }
 
 
