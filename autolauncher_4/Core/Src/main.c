@@ -44,8 +44,9 @@ typedef struct {
 } launcher_t;
 
 typedef struct {
-	uint16_t size; // memory size in bytes
-	uint16_t maxAddress; // memory address 0x00 - maxAddress >> 0x7F
+	const uint16_t SIZE; // memory size in bytes
+	const uint16_t MAX_MEM_ADDRESS; // memory address 0x00 - maxAddress >> 0x7F
+	const uint8_t  BUS_ADDRESS;
 	char configured;
 } eeprom_t;
 
@@ -54,6 +55,9 @@ typedef struct {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define MOTOR_RUNTIME 8000 // time to run motor in ms to extend/retract pin
+#define MOTOR_WIRING 0 // Use 1 or 0 based on motor wiring. This changes the direction to retract/extend pins
+#define EEPROM_BUS_ADDRESS 0xA0 // 0b1010000 7-bit device address
 
 /* USER CODE END PD */
 
@@ -71,7 +75,7 @@ enum relayLock_t {reFree, reLocked} relayLock = reFree; // relay mutex to ensure
 enum rxStatus_t {idle, active} rxStatus = idle; // flag, indicate if a new char was sent over serial. Set to NEW_CHAR in the UART interrupt callback, and IDLE after processing command
 enum activeMenu_t {mainMenu, configMenu} activeMenu = mainMenu;
 launcher_t launcher = {"00", '?', '?', "000"};
-eeprom_t eeprom = {1024, 0x7F, '\0'};
+eeprom_t eeprom = {1024, 0x7F, (uint8_t)EEPROM_BUS_ADDRESS,'\0'};
 char rxBuffer[1] = "\0"; // UART1 receive buffer from computer, a char will be stored here with UART interrupt
 char rxChar = '\0'; // UART1 receive character, == xBuffer[0]
 /* USER CODE END PV */
@@ -108,10 +112,15 @@ void drive_motor(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t motorDi
 void drive_relay(GPIO_TypeDef * relayPort, uint16_t relayPin, uint8_t onTime); // drive the desired relay
 void relay_init(void); // initialized relays in reset state
 void motor_init(void); // disable all motor enable pins
-
+void motor_select(uint8_t xbtNum, motorDir_t dir);
+void retract_pin(uint8_t xbtNum);
+void extend_pin(uint8_t xbtNum);
 // RS232 control
 void multiplexer_set(mux_t select);
-
+// EEPROM control
+uint8_t eeprom_read(uint8_t memoryAddress);
+void eeprom_write(uint8_t memoryAddress, uint8_t dataByte);
+void parameter_init(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -156,18 +165,16 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  // Initialize autolauncher parameters i.e. read eeprom
-  parameter_init();
   // Initialize stepper motors
   motor_init();
   // initialize multiplexer
   multiplexer_set(MUX_STM32);
   // Initialize relays
   relay_init();
-  // menu init
-  //menu_init();
   // enable receive interrupt
   HAL_UART_Receive_IT(&huart1, rxBuffer, 1); // enable UART receive interrupt, store received char in rxChar buffer
+  // Initialize autolauncher parameters i.e. read eeprom
+  parameter_init();
   // display main menu at startup
   menu_main();
 
@@ -246,46 +253,17 @@ void SystemClock_Config(void)
 /***************************************** START AUTOLAUNCHER FUNCTIONS *****************************************/
 
 
-void print_inline(char * text){
-	char temp = ' ';
-	for(uint8_t i = 0; i<=255 && temp!= '\0' ; i++){
-		temp = text[i];
-		HAL_UART_Transmit(&huart1, (uint8_t *) &temp, 1, 100);
-	}
-}
 
-/* Support printf over UART
-   Warning: printf() only empties the buffer and prints after seeing an \n */
-int __io_putchar(int ch){
-	(void) HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, HAL_MAX_DELAY);
-	return ch;
-}
-
-/* Initialize autolauncher parameters */
-void parameter_init(void){
-	// get parameters from eeprom or assign default values
-
-}
-
-/* UART Receive interrupt callback, set rxStatus flag for new char received and echo, re-enable uart rx interrupt*/
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart){
-	// check that uart1 triggered the interrupt callback
-	if(huart->Instance == USART1){
-		rxChar = rxBuffer[0]; // store the only element in buffer to a char for easier variable handling
-		rxStatus = active; // set flag to enter main menu char processing
-		HAL_UART_Receive_IT(&huart1, (uint8_t *) rxBuffer, 1); // reactivate rx interrupt
-	}
-}
 
 /* Process char received while in Main menu */
 void main_process_input(char option){
-	printf("\r\n> Executing OPTION (%c) ...\r\n", option);
+	printf("\r\n> Executing OPTION (%c) --> ", option);
 
 	switch (option){
 		// Connect XBT pins
     case '0':
         //engage calibration resistor
-    	printf(" -- unground_xbt(),calibration_resistor(),calibrate_on() --\r\n");
+    	printf("unground_xbt(), calibration_resistor(), calibrate_on()\r\n");
         unground_xbt();
         calibration_resistor();
         calibrate_on();
@@ -332,84 +310,84 @@ void main_process_input(char option){
         break;
         //EXTEND PINS
     case 'U':
-        //extend_pin('1');
     	printf("extend_pin(1)\r\n");
+    	extend_pin(1);
         break;
     case 'V':
-        //extend_pin('2');
         printf("extend_pin(2)\r\n");
+        extend_pin(2);
         break;
     case 'W':
-        //extend_pin('3');
         printf("extend_pin(3)\r\n");
+        extend_pin(3);
         break;
     case 'X':
-        //extend_pin('4');
         printf("extend_pin(4)\r\n");
+        extend_pin(4);
         break;
     case 'Y':
-        //extend_pin('5');
         printf("extend_pin(5)\r\n");
+        extend_pin(5);
         break;
     case 'Z':
-        //extend_pin('6');
         printf("extend_pin(6)\r\n");
+        extend_pin(6);
         break;
     case 'S':
         if (launcher.tubeCount == '8'){
-        	//extend_pin('7');
         	printf("extend_pin(7)\r\n");
+        	extend_pin(7);
         } else {
-        	printf("Error, tube 7 not available\r\n");
+        	printf("\r\n* ERROR: tube 7 not available *\r\n");
         }
         break;
     case 'T':
         if (launcher.tubeCount == '8'){
-        	//extend_pin('8');
         	printf("extend_pin(8)\r\n");
+        	extend_pin(8);
         } else {
-        	printf("Error, tube 8 not available\r\n");
+        	printf("\r\n* ERROR: tube 8 not available *\r\n");
         }
         break;
         //RETRACT PINS
     case 'A':
-        //retract_pin('1');
     	printf("retract_pin(1)\r\n");
+    	retract_pin(1);
         break;
     case 'B':
-        //retract_pin('2');
         printf("retract_pin(2)\r\n");
+        retract_pin(2);
         break;
     case 'C':
-        //retract_pin('3');
         printf("retract_pin(3)\r\n");
+        retract_pin(3);
         break;
     case 'D':
-        //retract_pin('4');
         printf("retract_pin(4)\r\n");
+        retract_pin(4);
         break;
     case 'E':
-        //retract_pin('5');
         printf("retract_pin(5)\r\n");
+        retract_pin(5);
         break;
     case 'F':
-        //retract_pin('6');
         printf("retract_pin(6)\r\n");
+        retract_pin(6);
         break;
     case 'H':
         if (launcher.tubeCount == '8'){
-        	//retract_pin('7');
         	printf("retract_pin(7)\r\n");
+        	retract_pin(7);
         } else {
-        	printf("Error, tube 7 not available\r\n");
+        	printf("* ERROR: tube 7 not available *\r\n");
         }
         break;
     case 'I':
         if (launcher.tubeCount == '8'){
-        	//retract_pin('8');
         	printf("retract_pin(8)\r\n");
+        	retract_pin(8);
         } else {
-        	printf("Error, tube 8 not available\r\n");
+        	printf("* ERROR: tube 8 not available *\r\n");
         }
         break;
     case 'K':
@@ -462,7 +440,7 @@ void config_process_input(char option){
             while(1){
             	if(rxStatus == active){
             		rxStatus = idle;
-            		printf(" %c\r\n", rxChar);
+            		printf("%c\r\n", rxChar);
             		if(rxChar == '6' || rxChar == '8'){
             			launcher.tubeCount = rxChar;
             			break;
@@ -478,7 +456,7 @@ void config_process_input(char option){
                 while(1){
                 	if(rxStatus == active){
                 		rxStatus = idle;
-                		printf(" %c\r\n", rxChar);
+                		printf("%c\r\n", rxChar);
                 		if(rxChar == 'X' || rxChar == 'R'){
                 			launcher.type = rxChar;
                 			break;
@@ -514,14 +492,15 @@ void config_process_input(char option){
             printf("\r\nNew autolauncher configuration: Tubes: %c | Type: %c | Serial: %s\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
 
             // store parameters in eeprom
-            printf("Settings saved!\r\n");
-//            eeprom_write(0x00, numOfTubes);
-//            eeprom_write(0x01, launcherLength);
-//            eeprom_write(0x02, num1);
-//            eeprom_write(0x03, num2);
-//            eeprom_write(0x04, configed);
+            eeprom_write(0x00, launcher.tubeCount);
+            eeprom_write(0x01, launcher.type);
+            eeprom_write(0x02, launcher.serialNumber[0]);
+            eeprom_write(0x03, launcher.serialNumber[1]);
+            eeprom_write(0x04, eeprom.configured);
 
-            //activeMenu = configMenu;
+            printf("Settings saved!\r\n");
+            printf("\r\nNew autolauncher configuration: Tubes: %c | Type: %c | Serial: %c%c | configed: %c\r\n", eeprom_read(0x00), eeprom_read(0x01), eeprom_read(0x02), eeprom_read(0x03), eeprom_read(0x04));
+
             menu_config();
             break;
         case 'J':
@@ -604,6 +583,9 @@ void menu_config(void) {
     printf("\r\n");
 }//end status_message
 
+
+/*********************** AUXILIAR FUNCTIONS ***********************/
+
 void print_serial_number(void){
 	//printf( "AL%c%s", launcher.type[0], launcher.serialNumber);
     if(eeprom.configured == '|'){
@@ -625,10 +607,56 @@ uint8_t is_num(char c){
 	return isNum;
 }
 
-/* RELAY AND MOTOR CONTROL */
+
+/* Select the source of RS232
+ * Parameters: select {MUX_GPS, MUX_STM32} */
 void multiplexer_set(mux_t select){
 	HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, select); // SET = UART-tx / RESET = Din from GPS
 }
+
+void print_inline(char * text){
+	char temp = ' ';
+	for(uint8_t i = 0; i<=255 && temp!= '\0' ; i++){
+		temp = text[i];
+		HAL_UART_Transmit(&huart1, (uint8_t *) &temp, 1, 100);
+	}
+}
+
+/* Support printf over UART
+   Warning: printf() only empties the buffer and prints after seeing an \n */
+int __io_putchar(int ch){
+	(void) HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, HAL_MAX_DELAY);
+	return ch;
+}
+
+/* Initialize autolauncher parameters */
+void parameter_init(void){
+	// get parameters from eeprom or assign default values
+	eeprom.configured = eeprom_read(0x04);
+	if(eeprom.configured == '|'){
+		printf("\r\n... Configuration found in memory ... \r\n");
+		launcher.tubeCount = eeprom_read(0x00);
+		launcher.type = eeprom_read(0x01);
+		launcher.serialNumber[0] = eeprom_read(0x02);
+		launcher.serialNumber[1] = eeprom_read(0x03);
+	} else {
+		printf("\r\n... Configuration NOT found in memory ... \r\n");
+	}
+}
+
+/* UART Receive complete interrupt callback, set rxStatus flag for new char received
+ * re-enable uart rx interrupt */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart){
+	// check that uart1 triggered the interrupt callback
+	if(huart->Instance == USART1){
+		rxChar = rxBuffer[0]; // store the only element in buffer to a char for easier variable handling
+		rxStatus = active; // set flag to enter main menu char processing
+		HAL_UART_Receive_IT(&huart1, (uint8_t *) rxBuffer, 1); // reactivate rx interrupt
+	}
+}
+
+
+/*********************** RELAY CONTROL FUNCTIONS ***********************/
 
 /* Disconnect the XBT ABC pins from ground
  * 3 relays can be used as ground when SET, or ground when RESET based on jumpers JP6-7-8
@@ -670,7 +698,6 @@ void reset_relay(void){
 	}
 }
 
-
 void connect_xbt_pin(uint8_t xbtNum){
 
 	if(relayLock == reFree){
@@ -710,29 +737,121 @@ void connect_xbt_pin(uint8_t xbtNum){
 			drive_relay(SSR_8_GPIO_Port, SSR_8_Pin, 1); // SET SSR8
 			break;
 		default:
-			printf("\r\n* ERROR: xbt not found *\r\n");
+			printf("\r\n* ERROR: XBT %i relay not found *\r\n", xbtNum);
 			break;
 		}
 		relayLock = reFree;
 	}
 }
 
+void relay_init(void){
+	drive_relay(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, 10);  // RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
+	HAL_Delay(10);
+	drive_relay(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, 10); // RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
+	HAL_Delay(10);
+	drive_relay(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, 10); // RESET relay k9, k10, k11, k12 (GND, calibration and continuity circuit)
+}
 
 
+void drive_relay(GPIO_TypeDef * relayPort, uint16_t relayPin, uint8_t onTime){
+	// SET relay k
+	HAL_GPIO_WritePin(relayPort, relayPin, SET); // set
+	HAL_Delay(onTime); // time coil is driven in ms
+	HAL_GPIO_WritePin(relayPort, relayPin, RESET); // release
+	HAL_Delay(2);
+}
 
 
+/*********************** MOTOR CONTROL FUNCTIONS ***********************/
+
+// ALV2 had a sequence with 4 delays of 8 ms, repeated in 300 steps = 4 * 8 ms * 300 = 7200 ms
+
+/* Extend pin wrapper */
+void extend_pin(uint8_t xbtNum){
+	if (MOTOR_WIRING == 0){ // select spin direction based on wiring
+		motor_select(xbtNum, CW);
+	} else {
+		motor_select(xbtNum, CCW);
+	}
+}
+
+/* Retract pin wrapper */
+void retract_pin(uint8_t xbtNum){
+	if (MOTOR_WIRING == 0){ // select spin direction based on wiring
+		motor_select(xbtNum, CCW);
+	} else {
+		motor_select(xbtNum, CW);
+	}
+}
+
+/* Motor driver selector
+ * direction to retract/extend may be different based on wiring
+ * Parameters: XBT number, direction {CW,CCW} */
+void motor_select(uint8_t xbtNum, motorDir_t dir){
+	if(motorLock == mFree){
+		motorLock = mLocked;
+		switch (xbtNum){
+		case 1:
+			drive_motor(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, dir, MOTOR_RUNTIME);
+			break;
+		case 2:
+			drive_motor(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, dir, MOTOR_RUNTIME);
+			break;
+		case 3:
+			drive_motor(ENABLE_M3_GPIO_Port, ENABLE_M3_Pin, dir, MOTOR_RUNTIME);
+			break;
+		case 4:
+			drive_motor(ENABLE_M4_GPIO_Port, ENABLE_M4_Pin, dir, MOTOR_RUNTIME);
+			break;
+		case 5:
+			drive_motor(ENABLE_M5_GPIO_Port, ENABLE_M5_Pin, dir, MOTOR_RUNTIME);
+			break;
+		case 6:
+			drive_motor(ENABLE_M6_GPIO_Port, ENABLE_M6_Pin, dir, MOTOR_RUNTIME);
+			break;
+		case 7:
+			drive_motor(ENABLE_M7_GPIO_Port, ENABLE_M7_Pin, dir, MOTOR_RUNTIME);
+			break;
+		case 8:
+			drive_motor(ENABLE_M8_GPIO_Port, ENABLE_M8_Pin, dir, MOTOR_RUNTIME);
+			break;
+		default:
+			printf("\r\n* ERROR: XBT %i motor not found *\r\n", xbtNum);
+			break;
+		}
+		motorLock = mFree;
+	}
+}
 
 
+/*********************** EEPROM FUNCTIONS ***********************/
+/* Model: Microchip AT24XX01
+ * Max freq 1 MHz, 1 Kbit memory (1024 bit), 128 x 8-bit block, 5 ms page write,
+ * 8-Byte write pages, fixed device address 1010-xxxRW, 128 bytes memory range {00-7F} */
 
+void eeprom_write(uint8_t memoryAddress, uint8_t dataByte){
+	uint8_t txBuffer[2] = {memoryAddress, dataByte};
+	if(memoryAddress <= eeprom.MAX_MEM_ADDRESS ){
+		HAL_I2C_Master_Transmit(&hi2c1, EEPROM_BUS_ADDRESS , txBuffer, 2, HAL_MAX_DELAY); // send word address, value
+		HAL_Delay(10); // wait for data to be written
+	} else {
+		printf("* ERROR: memory address %x exceeded max *\r\n", memoryAddress);
+	}
+}
 
-
-
-
-
-
-
-
-/* EEPROM CONTROL */
+uint8_t eeprom_read(uint8_t memoryAddress){
+	uint8_t addressBuffer[1] = {memoryAddress};
+	uint8_t rxBuffer[1] = {0};
+	if(memoryAddress <= eeprom.MAX_MEM_ADDRESS ){
+		HAL_I2C_Master_Transmit(&hi2c1, EEPROM_BUS_ADDRESS , addressBuffer, 1, HAL_MAX_DELAY); // dummy write to set pointer to desired memory address
+		HAL_Delay(10);
+		HAL_I2C_Master_Receive(&hi2c1, EEPROM_BUS_ADDRESS, rxBuffer, 1, HAL_MAX_DELAY); // send command to read 1 byte at current memory address pointer
+		HAL_Delay(10);
+	} else {
+		printf("* ERROR: memory address %x exceeded max *\r\n", memoryAddress);
+	}
+	return ((uint8_t) rxBuffer[0]);
+}
 
 
 /* DO NOT USE */
@@ -1021,24 +1140,6 @@ uint8_t processInput(char option){
 		HAL_UART_Transmit(&huart1, msg, strlen(msg), HAL_MAX_DELAY);
 		return 1;
 	}
-}
-
-
-void relay_init(void){
-	drive_relay(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, 10);  // RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
-	HAL_Delay(10);
-	drive_relay(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, 10); // RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
-	HAL_Delay(10);
-	drive_relay(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, 10); // RESET relay k9, k10, k11, k12 (GND, calibration and continuity circuit)
-}
-
-
-void drive_relay(GPIO_TypeDef * relayPort, uint16_t relayPin, uint8_t onTime){
-	// SET relay k
-	HAL_GPIO_WritePin(relayPort, relayPin, SET); // set
-	HAL_Delay(onTime); // time coil is driven in ms
-	HAL_GPIO_WritePin(relayPort, relayPin, RESET); // release
-	HAL_Delay(2);
 }
 
 
