@@ -10,6 +10,7 @@
 "./Core/Src/tim.o"
 "./Core/Src/usart.o"
 "./Core/Startup/startup_stm32f103rbtx.o"
+"./Drivers/API/retargetio.o"
 "./Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.o"
 "./Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_adc.o"
 "./Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_adc_ex.o"

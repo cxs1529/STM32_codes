@@ -7,3 +7,5 @@ test/
 # ignore debug directories created by Cube IDE
 */Debug/*
 
+# ignore files starting with ES_ workshop
+*ES_*

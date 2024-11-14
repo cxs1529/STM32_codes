@@ -29,18 +29,21 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "retargetio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef enum {CCW, CW} motorDir_t; // Relay Control variables
 typedef enum {MUX_GPS, MUX_STM32} mux_t; // TX from GPS MUX=0, TX from microcontroller MUX=1
+typedef enum {AL_TUBECOUNT, AL_TYPE, AL_SN, AL_CONFIGED, M_RUNTIME = 8 } memoryMap_t; // pages 0-7, 8-15, 16-23, 24-31, 32-39,
+
 
 typedef struct {
-	char serialNumber[3]; // 2 digit autolauncher S/N + NULL termination
+	uint8_t serialNumber; // 2 digit autolauncher S/N XX [0-255]
 	char tubeCount; // 6 or 8
 	char type; // R regular or X extended (amvereseasv6.0, v8.0, v8.1 (long) )
-	char pcbSerial[4]; // 3 digit PCB serialnum ALB3-XXX + NULL termination
+	uint8_t pcbSerial; // 2 digit PCB serialnum ALB3XX [0-255]
 } launcher_t;
 
 typedef struct {
@@ -50,15 +53,28 @@ typedef struct {
 	char configured;
 } eeprom_t;
 
+typedef struct {
+	uint32_t runTime; // motor runtime in ms [0-65535]
+	uint16_t imax[8]; // max current logged for each motor
+	uint16_t useCount[8]; // counter, number of uses for each motor
+} motor_t;
+
+typedef struct {
+	uint16_t adcReading;
+	float realValue;
+} analog_t;
 
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define MOTOR_RUNTIME 8000 // time to run motor in ms to extend/retract pin
+#define MOTOR_RUNTIME_MAX 20000
+#define MOTOR_RUNTIME_MIN 2000
 #define MOTOR_WIRING 0 // Use 1 or 0 based on motor wiring. This changes the direction to retract/extend pins
 #define EEPROM_BUS_ADDRESS 0xA0 // 0b1010000 7-bit device address
-
+#define VOLTAGE_READ_SAMPLES 20
+#define MAX_CHECKLIST_SIZE 10 // max number of items to check against when user inputs a character
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -74,8 +90,10 @@ enum motorLock_t {mFree, mLocked} motorLock = mFree; // motor mutex to ensure on
 enum relayLock_t {reFree, reLocked} relayLock = reFree; // relay mutex to ensure one coil is driven at a time
 enum rxStatus_t {idle, active} rxStatus = idle; // flag, indicate if a new char was sent over serial. Set to NEW_CHAR in the UART interrupt callback, and IDLE after processing command
 enum activeMenu_t {mainMenu, configMenu} activeMenu = mainMenu;
-launcher_t launcher = {"00", '?', '?', "000"};
-eeprom_t eeprom = {1024, 0x7F, (uint8_t)EEPROM_BUS_ADDRESS,'\0'};
+//enum memoryMap_t {AL_TUBECOUNT, AL_TYPE, AL_SN1, AL_SN2, AL_CONFIGED, M_RUNTIME } memoryMap;
+launcher_t launcher = {0xFF, '?', '?', 0xFF};
+eeprom_t eeprom = {1024, 0x7F, (uint8_t) EEPROM_BUS_ADDRESS,'\0'};
+motor_t motor = {10000, {0,0,0,0,0,0,0,0}, {0,0,0,0,0,0,0,0,} }; // runtime, imax, use count
 char rxBuffer[1] = "\0"; // UART1 receive buffer from computer, a char will be stored here with UART interrupt
 char rxChar = '\0'; // UART1 receive character, == xBuffer[0]
 /* USER CODE END PV */
@@ -85,11 +103,14 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
 // Auxiliar functions
+void get_user_input(char promptMsg[], char errorMsg[], uint8_t count, char checkList[], char * output);
 void print_inline(char * text);
+void print_char(uint8_t * ch);
 uint8_t is_num(char c);
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart);
 void print_serial_number(void);
-
+void uartrx_interrupt_init(void);
+analog_t voltage_read(uint8_t samples);
 // Menu control functions
 void menu_init(void);
 void menu_main(void);
@@ -115,11 +136,15 @@ void motor_init(void); // disable all motor enable pins
 void motor_select(uint8_t xbtNum, motorDir_t dir);
 void retract_pin(uint8_t xbtNum);
 void extend_pin(uint8_t xbtNum);
-// RS232 control
+// RS232 TX control
 void multiplexer_set(mux_t select);
 // EEPROM control
 uint8_t eeprom_read(uint8_t memoryAddress);
 void eeprom_write(uint8_t memoryAddress, uint8_t dataByte);
+void eeprom_print_map(void);
+uint8_t eeprom_clear(uint8_t memoryStart, uint8_t memoryEnd);
+uint32_t eeprom_read_uint32(uint8_t memoryStart);
+void eeprom_write_uint32(uint8_t memoryStart, uint32_t data);
 void parameter_init(void);
 /* USER CODE END PFP */
 
@@ -165,6 +190,8 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  // Retarget IO to UART
+  RetargetInit(&huart1);
   // Initialize stepper motors
   motor_init();
   // initialize multiplexer
@@ -172,7 +199,7 @@ int main(void)
   // Initialize relays
   relay_init();
   // enable receive interrupt
-  HAL_UART_Receive_IT(&huart1, rxBuffer, 1); // enable UART receive interrupt, store received char in rxChar buffer
+  uartrx_interrupt_init();
   // Initialize autolauncher parameters i.e. read eeprom
   parameter_init();
   // display main menu at startup
@@ -195,7 +222,7 @@ int main(void)
 	  }
 	  // monitor voltage and send alarm if it's below a threshold
 	  //HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-	  HAL_Delay(100);
+	  HAL_Delay(100); // needed to debug, remove
 
     /* USER CODE END WHILE */
 
@@ -417,6 +444,11 @@ void main_process_input(char option){
         print_serial_number();
         printf("\r\n");
         break;
+    case 'P':
+    	// read input voltage on autolauncher
+    	analog_t vin = voltage_read(VOLTAGE_READ_SAMPLES);
+    	printf("[AD# %i] Vin= %i.%i V\r\n", vin.adcReading,(uint8_t)vin.realValue, (uint8_t)(vin.realValue * 10 - ((uint8_t)vin.realValue * 10)) );
+    	break;
     default:
         printf("\r\n** Unrecognized command!!** \r\n");
         break;
@@ -436,70 +468,93 @@ void config_process_input(char option){
             break;
         case '1':
         	// get the autolauncher tube count
-            print_inline("\r\nEnter AL tube count [6] or [8]: ");
-            while(1){
-            	if(rxStatus == active){
-            		rxStatus = idle;
-            		printf("%c\r\n", rxChar);
-            		if(rxChar == '6' || rxChar == '8'){
-            			launcher.tubeCount = rxChar;
-            			break;
-            		} else {
-            			printf("\r\nError, Enter 6 or 8 !\r\n");
-            			print_inline("\r\nEnter AL tube count [6] or [8]: ");
-            		}
-            	}
-            }
+        	char tubes[1];
+        	char tubePrompt[] = "\r\nEnter AL tube count [6] or [8]: ";
+        	char tubeError[] = "\r\nERROR: Enter 6 or 8 !\r\n";
+        	char tubeCheck[] = {'6','8'};
+        	get_user_input(tubePrompt, tubeError, 1, tubeCheck, tubes);
+//            print_inline("\r\nEnter AL tube count [6] or [8]: ");
+//            while(1){
+//            	if(rxStatus == active){
+//            		rxStatus = idle;
+//            		printf("%c\r\n", rxChar);
+//            		if(rxChar == '6' || rxChar == '8'){
+//            			launcher.tubeCount = rxChar;
+//            			break;
+//            		} else {
+//            			printf("\r\nError, Enter 6 or 8 !\r\n");
+//            			print_inline("\r\nEnter AL tube count [6] or [8]: ");
+//            		}
+//            	}
+//            }
+            launcher.tubeCount = tubes[0];
             // get the autolauncher type, R regular or X extended, only for 8 tube AL
             if(launcher.tubeCount == '8'){
-            	print_inline("Enter launcher type, [X] extended or [R] regular: ");
-                while(1){
-                	if(rxStatus == active){
-                		rxStatus = idle;
-                		printf("%c\r\n", rxChar);
-                		if(rxChar == 'X' || rxChar == 'R'){
-                			launcher.type = rxChar;
-                			break;
-                		} else {
-                			printf("\r\nError, Enter X or R !\r\n");
-                			print_inline("Enter launcher type, [X] extended or [R] regular: ");
-                		}
-                	}
-                }
+            	char type[1];
+            	char typePrompt[] = "Enter launcher type, [X] extended or [R] regular: ";
+            	char typeError[] = "\r\nERROR: Enter X or R !\r\n";
+            	char typeCheck[] = {'R','X'};
+            	get_user_input(typePrompt, typeError, 1, typeCheck, type);
+            	launcher.type = type[0];
+
+//            	print_inline("Enter launcher type, [X] extended or [R] regular: ");
+//                while(1){
+//                	if(rxStatus == active){
+//                		rxStatus = idle;
+//                		printf("%c\r\n", rxChar);
+//                		if(rxChar == 'X' || rxChar == 'R'){
+//                			launcher.type = rxChar;
+//                			break;
+//                		} else {
+//                			printf("\r\nError, Enter X or R !\r\n");
+//                			print_inline("Enter launcher type, [X] extended or [R] regular: ");
+//                		}
+//                	}
+//                }
             } else {
             	launcher.type = '?'; // if not 8 tubes, reset type to unknown
             }
-            print_inline("Enter a two-digit autolauncher serial number [0-99]: ");
-            // get the 2 digit serial number
-    		for(uint8_t i = 0; i < 2; i++){
-    			while(1){
-					if(rxStatus == active){
-						rxStatus = idle;
-						if(is_num(rxChar) == 1){ // check it's a number to store it
-							launcher.serialNumber[i] = rxChar;
-							break;
-						} else {
-							printf("\r\nEnter only numbers!\r\n");
-							i = 0; // restart index count
-							print_inline("Enter a two-digit autolauncher serial number [0-99]: ");
-						}
-    				}
-    			}
-    		}
-    		printf("%s\r\n", launcher.serialNumber);
+            //launcher.serialNumber = 55;
+        	char serial[2];
+        	char serialPrompt[] = "Enter a two-digit autolauncher serial number [00-99]: ";
+        	char serialError[] = "\r\nEnter only numbers!\r\n";
+        	char serialCheck[] = {'0','1','2','3','4','5','6','7','8','9'};
+        	get_user_input(serialPrompt, serialError, 2, serialCheck, serial);
+        	launcher.serialNumber = (uint8_t)(serial[0] - '0') * 10 + (serial[1] - '0'); // convert to number, subtract '0' (48 dec)
+//            print_inline("Enter a two-digit autolauncher serial number [0-99]: ");
+//            // get the 2 digit serial number
+//            char serial[2];
+//    		for(uint8_t i = 0; i < 2; i++){
+//    			while(1){
+//					if(rxStatus == active){
+//						rxStatus = idle;
+//						if(is_num(rxChar) == 1){ // check it's a number to store it
+//							serial[i] = rxChar;
+//							break;
+//						} else {
+//							printf("\r\nEnter only numbers!\r\n");
+//							i = 0; // restart index count
+//							print_inline("Enter a two-digit autolauncher serial number [0-99]: ");
+//						}
+//    				}
+//    			}
+//    		}
+//    		launcher.serialNumber = atoi(serial[0]) * 10 + atoi(serial[1]);
+//    		printf("%s\r\n", launcher.serialNumber);
     		// set the AL configured flag and print configuration
             eeprom.configured = '|';
-            printf("\r\nNew autolauncher configuration: Tubes: %c | Type: %c | Serial: %s\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
+            printf("\r\nTubes: %c | Type: %c | Serial: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
 
             // store parameters in eeprom
-            eeprom_write(0x00, launcher.tubeCount);
-            eeprom_write(0x01, launcher.type);
-            eeprom_write(0x02, launcher.serialNumber[0]);
-            eeprom_write(0x03, launcher.serialNumber[1]);
-            eeprom_write(0x04, eeprom.configured);
+            eeprom_write(AL_TUBECOUNT, launcher.tubeCount);
+            eeprom_write(AL_TYPE, launcher.type);
+            eeprom_write(AL_SN, launcher.serialNumber);
+            //eeprom_write(AL_SN1, launcher.serialNumber[0]);
+            //eeprom_write(AL_SN2, launcher.serialNumber[1]);
+            eeprom_write(AL_CONFIGED, eeprom.configured);
 
-            printf("Settings saved!\r\n");
-            printf("\r\nNew autolauncher configuration: Tubes: %c | Type: %c | Serial: %c%c | configed: %c\r\n", eeprom_read(0x00), eeprom_read(0x01), eeprom_read(0x02), eeprom_read(0x03), eeprom_read(0x04));
+            printf("Settings saved!");
+            printf("\r\nNew autolauncher configuration: Tubes: %c | Type: %c | Serial: %i | configed: %c\r\n", eeprom_read(AL_TUBECOUNT), eeprom_read(AL_TYPE), eeprom_read(AL_SN), eeprom_read(AL_CONFIGED));
 
             menu_config();
             break;
@@ -516,6 +571,114 @@ void config_process_input(char option){
             //grease_pins();
             printf("grease_pins();");
             break;
+        case 'C':
+        	uint8_t memStart, memEnd;
+        	eeprom_print_map(); // print memory map
+        	// get the memory range to clear - start
+        	uint8_t validMemory = 0; // valid memory value flag
+			char mem[3]; // buffer to store digits
+			char mStartPrompt[] = "\r\nEnter 3 digit START memory address [000-127]: ";
+			char mEndPrompt[] = "\r\nEnter 3 digit END memory address [000-127]: ";
+			char memError[] = "\r\n* ERROR: enter valid numbers *\r\n";
+			char memCheck[] = {'0','1','2','3','4','5','6','7','8','9'};
+			// get start address
+        	do{
+				get_user_input(mStartPrompt, memError, 3, memCheck, mem);
+				memStart = (uint8_t)(mem[0] - '0') * 100 + (mem[1] - '0') * 10 + (mem[2] - '0'); // convert to number, subtract '0' (48 dec)
+				if((memStart >= 0) && (memStart <= 127)){
+					validMemory = 1;
+				} else {
+					printf("Memory out of range!\r\n");
+				}
+        	} while ( validMemory == 0 );
+        	// get end address
+        	validMemory = 0;
+        	do{
+				mem[0] = '\0', mem[1] = '\0' , mem[2] = '\0';
+
+				get_user_input(mEndPrompt, memError, 3, memCheck, mem);
+				memEnd = (uint8_t)(mem[0] - '0') * 100 + (mem[1] - '0') * 10 + (mem[2] - '0'); // convert to number, subtract '0' (48 dec)
+				if((memEnd >= 0) && (memEnd <= 127)){
+					validMemory = 1;
+				} else {
+					printf("Memory out of range!\r\n");
+				}
+        	} while ( validMemory == 0 );
+        	printf("%i blocks cleared\r\n", eeprom_clear(memStart, memEnd));
+        	// update variables with new stored values
+    		launcher.tubeCount = eeprom_read(AL_TUBECOUNT);
+    		launcher.type = eeprom_read(AL_TYPE);
+    		launcher.serialNumber = eeprom_read(AL_SN);
+    		eeprom.configured = eeprom_read(AL_CONFIGED);
+    		motor.runTime = eeprom_read_uint32(M_RUNTIME);
+    		printf("\r\nTubes: %c | Type: %c | Serial: %i | Runtime: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber, (int)motor.runTime);
+
+//			print_inline("\r\nEnter START memory address [0-127]: ");
+//			while(1){
+//				if(rxStatus == active){
+//					rxStatus = idle;
+//					printf("%c\r\n", rxChar);
+//					if(rxChar >= 0 && rxChar <= eeprom.MAX_MEM_ADDRESS){
+//						mstart = rxChar;
+//						break;
+//					} else {
+//						printf("\r\n* ERROR: memory out of range *\r\n");
+//						print_inline("\r\nEnter START memory address [0-127]: ");
+//					}
+//				}
+//			}
+//        	// get the memory range to clear - end
+//			print_inline("\r\nEnter END memory address [0-127]: ");
+//			while(1){
+//				if(rxStatus == active){
+//					rxStatus = idle;
+//					printf("%c\r\n", rxChar);
+//					if(rxChar >= 0 && rxChar <= eeprom.MAX_MEM_ADDRESS && rxChar >= mstart){
+//						mend = rxChar;
+//						break;
+//					} else {
+//						printf("\r\n* ERROR: memory out of range or mSTART > mEND *\r\n");
+//						print_inline("\r\nEnter END memory address [0-127]: ");
+//					}
+//				}
+//			}
+			//printf("%i blocks cleared\r\n", eeprom_clear(mstart, mend));
+
+        	break;
+        case 'T':
+        	char mot[5];
+        	char motorPrompt[] = "Enter motor runtime (5-digit number) in milliseconds [02000-15000]: ";
+        	char motorError[] = "\r\nEnter only numbers!\r\n";
+        	char motorCheck[] = {'0','1','2','3','4','5','6','7','8','9'};
+        	get_user_input(motorPrompt, motorError, 5, motorCheck, mot);
+        	motor.runTime = (uint32_t)(mot[0] - '0') * 10000 + (mot[1] - '0') * 1000 + (mot[2] - '0') * 100 + (mot[3] - '0') * 10 + (mot[4] - '0');
+
+//        	printf("-- Stepper motor runtime setup --\r\n");
+//            print_inline("Enter a 5-digit number in milliseconds[02000-15000]: ");
+//            // get the 2 digit serial number
+//            char mtime[5];
+//    		for(uint8_t i = 0; i < 5; i++){
+//    			while(1){
+//					if(rxStatus == active){
+//						rxStatus = idle;
+//						if(is_num(rxChar) == 1){ // check it's a number to store it
+//							mtime[i] = rxChar;
+//							break;
+//						} else {
+//							printf("\r\nEnter only numbers!\r\n");
+//							i = 0; // restart index count
+//							print_inline("Enter a 5-digit number in milliseconds[02000-15000]: ");
+//						}
+//    				}
+//    			}
+//    		}
+//    		motor.runTime = (uint32_t)((mtime[0]-'0')*10000 + (mtime[0]-'0')*1000 + (mtime[0]-'0')*100 + (mtime[0]-'0')*10 + (mtime[0]-'0'));
+    		printf("Motor ON time: %i ms\r\n", (int)motor.runTime);
+    		eeprom_write_uint32(M_RUNTIME, motor.runTime);
+    		printf("Setting saved! Runtime: %i\r\n\r\n", (int)eeprom_read_uint32(M_RUNTIME));
+
+
+        	break;
         default:
         	printf("\r\n** Unrecognized command!!** \r\n");
             break;
@@ -551,12 +714,13 @@ void menu_main(void) {
     } else {
     	printf("| ERROR, NO TUBE COUNT!!     	        |\n\r");
     }
-    printf("| Unground   XBT       G                |\n\r");
-    printf("| Calibrate on         K                |\n\r");
-    printf("| Cal resistor         L                |\n\r");
+    printf("| Unground XBT         G                |\n\r");
+    printf("| Calibrate On         K                |\n\r");
+    printf("| Cal Resistor         L                |\n\r");
     printf("| Reset Relays         R                |\n\r");
-    printf("| Print serial number  s                |\n\r");
+    printf("| Print Serial Number  s                |\n\r");
     printf("| This Menu            M                |\n\r");
+    printf("| Read Voltage         P                |\n\r");
     printf("=========================================\n\r");
     printf("\r\n");
 }//end status_message
@@ -575,9 +739,12 @@ void menu_config(void) {
     printf("=========================================\n\r");
     printf("| Set tubes & S/N      1                |\n\r");
     printf("| This Menu            M                |\n\r");
-    printf("| Extend all   pins    J                |\n\r");
-    printf("| Retract all  pins    N                |\n\r");
+    printf("| Extend all pins      J                |\n\r");
+    printf("| Retract all pins     N                |\n\r");
     printf("| Grease pins  mode    G                |\n\r");
+    printf("| Clear memory range   C                |\n\r");
+    printf("| Read motor stats     S                |\n\r");
+    printf("| Set motor runtime    T                |\n\r");
     printf("| Quit config menu     Q                |\n\r");
     printf("=========================================\n\r");
     printf("\r\n");
@@ -586,15 +753,53 @@ void menu_config(void) {
 
 /*********************** AUXILIAR FUNCTIONS ***********************/
 
+void get_user_input(char promptMsg[], char errorMsg[], uint8_t count, char checkList[], char * output){
+	//const uint8_t checkListSize = 10;
+	print_inline(promptMsg);
+    for(uint8_t i = 0; i < count; i++){
+		while(1){
+			HAL_Delay(5); // needed to debug, remove
+			if(rxStatus == active){
+				rxStatus = idle;
+				print_char(rxChar);
+				uint8_t checkFlag = 0;
+				// check that belongs to the checkList
+				for(uint8_t j = 0; j < MAX_CHECKLIST_SIZE; j++){
+					// if there is a match, set flag, store value and break
+					if(rxChar == checkList[j]){
+						checkFlag = 1;
+						output[i] = rxChar;// store the value
+						break;
+					}
+				} // if no match, flag is 0
+				if(checkFlag == 0){
+					printf(errorMsg);
+					print_inline(promptMsg);
+					i = 0; // reinitialize counter to start over
+				}
+				// break while loop if value is good
+				if(checkFlag == 1) break;
+			}
+		}
+    }
+    printf("\r\n");
+}
+
+/* Print a single character for echo in line */
+void print_char(uint8_t * ch){
+	HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, 100);
+}
+
 void print_serial_number(void){
 	//printf( "AL%c%s", launcher.type[0], launcher.serialNumber);
     if(eeprom.configured == '|'){
-    	printf( "AL%c%s", launcher.type, launcher.serialNumber);
+    	if(launcher.tubeCount == '6'){
+    		printf( "AL%i ", launcher.serialNumber);
+    	} else { // if 8 tubes
+    		printf( "AL%c%i", launcher.type, launcher.serialNumber);
+    	}
     } else {
-        if (launcher.tubeCount == '6')
-            printf("AL6XX");
-        else
-            printf("ALRXX");
+    	printf( "AL???");
     }
 }
 
@@ -614,6 +819,8 @@ void multiplexer_set(mux_t select){
 	HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, select); // SET = UART-tx / RESET = Din from GPS
 }
 
+/* Print line without a '\n' newline at the end
+ * Use for data entry prompts or partial text inline */
 void print_inline(char * text){
 	char temp = ' ';
 	for(uint8_t i = 0; i<=255 && temp!= '\0' ; i++){
@@ -624,24 +831,37 @@ void print_inline(char * text){
 
 /* Support printf over UART
    Warning: printf() only empties the buffer and prints after seeing an \n */
-int __io_putchar(int ch){
-	(void) HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, HAL_MAX_DELAY);
-	return ch;
-}
+//int __io_putchar(int ch){
+//	(void) HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, HAL_MAX_DELAY);
+//	return ch;
+//}
 
 /* Initialize autolauncher parameters */
 void parameter_init(void){
 	// get parameters from eeprom or assign default values
-	eeprom.configured = eeprom_read(0x04);
+	eeprom.configured = eeprom_read(AL_CONFIGED);
 	if(eeprom.configured == '|'){
 		printf("\r\n... Configuration found in memory ... \r\n");
-		launcher.tubeCount = eeprom_read(0x00);
-		launcher.type = eeprom_read(0x01);
-		launcher.serialNumber[0] = eeprom_read(0x02);
-		launcher.serialNumber[1] = eeprom_read(0x03);
+		launcher.tubeCount = eeprom_read(AL_TUBECOUNT);
+		launcher.type = eeprom_read(AL_TYPE);
+		launcher.serialNumber = eeprom_read(AL_SN);
+		// read motor runtime and assign a default value if out of range
+		uint32_t rt = eeprom_read_uint32(M_RUNTIME);
+		if(rt > MOTOR_RUNTIME_MIN && rt < MOTOR_RUNTIME_MAX)
+			motor.runTime = rt;
+		else
+			motor.runTime = MOTOR_RUNTIME;
+		//launcher.serialNumber[1] = eeprom_read(AL_SN2);
+		printf("\r\nTubes: %c | Type: %c | Serial: %i | Runtime: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber, (int)motor.runTime);
 	} else {
 		printf("\r\n... Configuration NOT found in memory ... \r\n");
 	}
+
+	// test, remove
+//	uint32_t before = eeprom_read_uint32(M_RUNTIME);
+//	eeprom_write_uint32(M_RUNTIME, 10500);
+//	uint32_t after = eeprom_read_uint32(M_RUNTIME);
+//	printf("Runtime: before(%i), after(%i)\r\n", before,after);
 }
 
 /* UART Receive complete interrupt callback, set rxStatus flag for new char received
@@ -654,6 +874,33 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart){
 		HAL_UART_Receive_IT(&huart1, (uint8_t *) rxBuffer, 1); // reactivate rx interrupt
 	}
 }
+
+/* wrapper for 1st uart_rx call
+ * The interrupt is enabled for rx after this function is called, and then disabled until called again */
+void uartrx_interrupt_init(void){
+	HAL_UART_Receive_IT(&huart1, (uint8_t *) rxBuffer, 1); // enable UART receive interrupt, store received char in rxChar buffer
+}
+
+
+analog_t voltage_read(uint8_t samples){
+	analog_t voltage = {0, 0.0};
+	// take an average of samples
+	for(uint8_t i = 0; i<samples; i++){
+		HAL_ADC_Start(&hadc1);
+		HAL_ADC_PollForConversion(&hadc1, 10);
+		voltage.adcReading += HAL_ADC_GetValue(&hadc1);
+		HAL_ADC_Stop(&hadc1);
+		HAL_Delay(1);
+	}
+	voltage.adcReading = voltage.adcReading/samples;
+	voltage.realValue = voltage.adcReading * 0.0083 + 0.3963; // 15.23 store coef. in eeprom
+
+	// get 1 decimal
+	//uint8_t dec = (uint8_t)(vin * 10 - ((uint8_t)vin * 10)); // 152 - 150 = 2
+	//printf("[AD# %d] Vin= %i.%i V\r\n", (uint8_t)adcReading,(uint8_t)vin, (uint8_t)(vin * 10 - ((uint8_t)vin * 10)) );
+	return voltage;
+}
+
 
 
 /*********************** RELAY CONTROL FUNCTIONS ***********************/
@@ -792,28 +1039,28 @@ void motor_select(uint8_t xbtNum, motorDir_t dir){
 		motorLock = mLocked;
 		switch (xbtNum){
 		case 1:
-			drive_motor(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, dir, MOTOR_RUNTIME);
+			drive_motor(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, dir, motor.runTime);
 			break;
 		case 2:
-			drive_motor(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, dir, MOTOR_RUNTIME);
+			drive_motor(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, dir, motor.runTime);
 			break;
 		case 3:
-			drive_motor(ENABLE_M3_GPIO_Port, ENABLE_M3_Pin, dir, MOTOR_RUNTIME);
+			drive_motor(ENABLE_M3_GPIO_Port, ENABLE_M3_Pin, dir, motor.runTime);
 			break;
 		case 4:
-			drive_motor(ENABLE_M4_GPIO_Port, ENABLE_M4_Pin, dir, MOTOR_RUNTIME);
+			drive_motor(ENABLE_M4_GPIO_Port, ENABLE_M4_Pin, dir, motor.runTime);
 			break;
 		case 5:
-			drive_motor(ENABLE_M5_GPIO_Port, ENABLE_M5_Pin, dir, MOTOR_RUNTIME);
+			drive_motor(ENABLE_M5_GPIO_Port, ENABLE_M5_Pin, dir, motor.runTime);
 			break;
 		case 6:
-			drive_motor(ENABLE_M6_GPIO_Port, ENABLE_M6_Pin, dir, MOTOR_RUNTIME);
+			drive_motor(ENABLE_M6_GPIO_Port, ENABLE_M6_Pin, dir, motor.runTime);
 			break;
 		case 7:
-			drive_motor(ENABLE_M7_GPIO_Port, ENABLE_M7_Pin, dir, MOTOR_RUNTIME);
+			drive_motor(ENABLE_M7_GPIO_Port, ENABLE_M7_Pin, dir, motor.runTime);
 			break;
 		case 8:
-			drive_motor(ENABLE_M8_GPIO_Port, ENABLE_M8_Pin, dir, MOTOR_RUNTIME);
+			drive_motor(ENABLE_M8_GPIO_Port, ENABLE_M8_Pin, dir, motor.runTime);
 			break;
 		default:
 			printf("\r\n* ERROR: XBT %i motor not found *\r\n", xbtNum);
@@ -830,28 +1077,100 @@ void motor_select(uint8_t xbtNum, motorDir_t dir){
  * 8-Byte write pages, fixed device address 1010-xxxRW, 128 bytes memory range {00-7F} */
 
 void eeprom_write(uint8_t memoryAddress, uint8_t dataByte){
-	uint8_t txBuffer[2] = {memoryAddress, dataByte};
+	uint8_t txBuff[2] = {memoryAddress, dataByte};
 	if(memoryAddress <= eeprom.MAX_MEM_ADDRESS ){
-		HAL_I2C_Master_Transmit(&hi2c1, EEPROM_BUS_ADDRESS , txBuffer, 2, HAL_MAX_DELAY); // send word address, value
+		HAL_I2C_Master_Transmit(&hi2c1, EEPROM_BUS_ADDRESS , txBuff, 2, HAL_MAX_DELAY); // send word address, value
 		HAL_Delay(10); // wait for data to be written
 	} else {
-		printf("* ERROR: memory address %x exceeded max *\r\n", memoryAddress);
+		printf("* ERROR: memory address %x out of range [0-%i] *\r\n", memoryAddress, eeprom.MAX_MEM_ADDRESS);
 	}
 }
 
 uint8_t eeprom_read(uint8_t memoryAddress){
 	uint8_t addressBuffer[1] = {memoryAddress};
-	uint8_t rxBuffer[1] = {0};
+	uint8_t rxBuff[1] = {0};
 	if(memoryAddress <= eeprom.MAX_MEM_ADDRESS ){
 		HAL_I2C_Master_Transmit(&hi2c1, EEPROM_BUS_ADDRESS , addressBuffer, 1, HAL_MAX_DELAY); // dummy write to set pointer to desired memory address
 		HAL_Delay(10);
-		HAL_I2C_Master_Receive(&hi2c1, EEPROM_BUS_ADDRESS, rxBuffer, 1, HAL_MAX_DELAY); // send command to read 1 byte at current memory address pointer
+		HAL_I2C_Master_Receive(&hi2c1, EEPROM_BUS_ADDRESS, rxBuff, 1, HAL_MAX_DELAY); // send command to read 1 byte at current memory address pointer
 		HAL_Delay(10);
 	} else {
-		printf("* ERROR: memory address %x exceeded max *\r\n", memoryAddress);
+		printf("* ERROR: memory address %x out of range [0-%i] *\r\n", memoryAddress, eeprom.MAX_MEM_ADDRESS);
 	}
-	return ((uint8_t) rxBuffer[0]);
+	return ((uint8_t) rxBuff[0]);
 }
+
+/* Clear memory within a given range of addresses
+ * Parameters: start address and end address (inclusive) [0-127]
+ * Returns number of blocks cleared */
+uint8_t eeprom_clear(uint8_t memoryStart, uint8_t memoryEnd){
+	uint8_t i;
+	if( (memoryStart >= 0) && (memoryEnd <= eeprom.MAX_MEM_ADDRESS) ){
+		for(i = memoryStart ; i <= memoryEnd ; i++){
+			eeprom_write(i, 0xFF);
+		}
+	} else {
+		printf("* ERROR: memory out of range [0-%i] *\r\n", eeprom.MAX_MEM_ADDRESS);
+	}
+	return (i-memoryStart+1);
+}
+
+/* print memory map on eeprom
+ * {AL_TUBECOUNT, AL_TYPE, AL_SN1, AL_SN2, AL_CONFIGED, M_RUNTIME } */
+void eeprom_print_map(void){
+	printf("\r\n");
+	printf("|=======================================|\r\n");
+	printf("|              MEMORY MAP               |\r\n");
+	printf("|=======================================|\r\n");
+	printf("|[%03i]       AL_TUBECOUNT              |\r\n"
+		   "|[%03i]       AL_TYPE                   |\r\n"
+		   "|[%03i]       AL_SN                     |\r\n"
+		   "|[%03i]       AL_CONFIGED               |\r\n"
+		   "|[%03i-%03i]  M_RUNTIME                 |\r\n", AL_TUBECOUNT, AL_TYPE, AL_SN, AL_CONFIGED, M_RUNTIME,M_RUNTIME+3);
+	printf("|=======================================|\r\n");
+}
+
+/* Writes a 32-bit number to memory [0-65535]
+ * or any 4-byte value (float) */
+void eeprom_write_uint32(uint8_t memoryStart, uint32_t data){
+	//[byte0][byte1][byte2][byte3] = 32 bit data
+	uint8_t dataByte[4] = {(data>>0), (data>>8), (data>>16), (data>>24)}; // break up each byte of the 32 bit number
+	for(uint8_t i = 0; i < 4; i++){
+		eeprom_write(memoryStart+i, dataByte[i]);
+	}
+
+}
+
+/* Reads a 32-bit number from memory [0-65535]*/
+uint32_t eeprom_read_uint32(uint8_t memoryStart){
+	//[byte0][byte1][byte2][byte3] = 32 bit data
+	uint8_t dataByte[4];
+	uint32_t number;
+	for(uint8_t i = 0; i < 4; i++){
+		dataByte[i] = eeprom_read(memoryStart+i);
+	}
+	number = (dataByte[3]<<24) + (dataByte[2]<<16) + (dataByte[1]<<8) + dataByte[0]; // put back the 32 bit number [byte0]+[byte1]+[byte2]+[byte3]
+
+	return number;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 /* DO NOT USE */
