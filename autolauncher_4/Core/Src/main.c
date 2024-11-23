@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "dma.h"
 #include "i2c.h"
 #include "tim.h"
 #include "usart.h"
@@ -68,13 +69,15 @@ typedef struct {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define MOTOR_RUNTIME 8000 // time to run motor in ms to extend/retract pin
-#define MOTOR_RUNTIME_MAX 20000
-#define MOTOR_RUNTIME_MIN 2000
+#define MOTOR_RUNTIME 8000 // default time to run motor in milliseconds to extend/retract pin, if not configured and stored in memory
+#define MOTOR_RUNTIME_MAX 20000 // max allowed time in ms
+#define MOTOR_RUNTIME_MIN 2000 // min allowed time in ms
 #define MOTOR_WIRING 0 // Use 1 or 0 based on motor wiring. This changes the direction to retract/extend pins
+#define RELAY_ON_TIME 10 // time to keep relay coils energized in milliseconds
+#define RELAY_INTERVAL_TIME 10 // time in between relay activations when in sequence, in milliseconds
 #define EEPROM_BUS_ADDRESS 0xA0 // 0b1010000 7-bit device address
-#define VOLTAGE_READ_SAMPLES 20
-#define MAX_CHECKLIST_SIZE 10 // max number of items to check against when user inputs a character
+#define ADC_BUFFER_SAMPLES 300 // number of samples to with ADC when reading Vin, current and internat temperature. MUT BE DIVISIBLE BY 3
+#define MAX_CHECKLIST_SIZE 10 // max number of items to check against when user inputs a character. Used in get_user_input()
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -96,6 +99,9 @@ eeprom_t eeprom = {1024, 0x7F, (uint8_t) EEPROM_BUS_ADDRESS,'\0'};
 motor_t motor = {10000, {0,0,0,0,0,0,0,0}, {0,0,0,0,0,0,0,0,} }; // runtime, imax, use count
 char rxBuffer[1] = "\0"; // UART1 receive buffer from computer, a char will be stored here with UART interrupt
 char rxChar = '\0'; // UART1 receive character, == xBuffer[0]
+uint8_t adcComplete = 0; // flag used to print ADC values
+uint8_t adcTimerTrigger = 0; // flag used to trigger an ADC conversion in DMA mode
+uint8_t adcDMAFull = 0; // this flag is set by the DMA IRQ when the adc buffer is full (stm32f1xx_it.c)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -136,6 +142,8 @@ void motor_init(void); // disable all motor enable pins
 void motor_select(uint8_t xbtNum, motorDir_t dir);
 void retract_pin(uint8_t xbtNum);
 void extend_pin(uint8_t xbtNum);
+void retract_all_pins(uint8_t countLimit);
+void extend_all_pins(uint8_t countLimit);
 // RS232 TX control
 void multiplexer_set(mux_t select);
 // EEPROM control
@@ -182,15 +190,16 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_TIM3_Init();
   MX_USART1_UART_Init();
   MX_ADC1_Init();
-  MX_ADC2_Init();
   MX_I2C1_Init();
   MX_USART3_UART_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
-  // Retarget IO to UART
+  // Retarget IO stream to UART
   RetargetInit(&huart1);
   // Initialize stepper motors
   motor_init();
@@ -205,6 +214,20 @@ int main(void)
   // display main menu at startup
   menu_main();
 
+  // test timer 4
+//  uint16_t buf[30];
+
+
+//  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+//  while(!dmaFull){
+//	  HAL_ADC_Start_DMA(&hadc1, (uint32_t *) buf, 30);
+//  }
+//  HAL_Delay(5);
+////  HAL_TIM_Base_Start_IT(&htim4);
+//  for(uint8_t i = 0; i < 30; i = i+3){
+//	  printf("<%i> %i | %i | %i\r\n", i, buf[i],buf[i+1],buf[i+2]);
+//  }
+//  HAL_TIM_Base_Stop_IT(&htim4);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -222,7 +245,9 @@ int main(void)
 	  }
 	  // monitor voltage and send alarm if it's below a threshold
 	  //HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-	  HAL_Delay(100); // needed to debug, remove
+	  HAL_Delay(1); // needed to debug, remove
+	  //HAL_ADC_Start_DMA(&hadc1, &buf, 10);
+
 
     /* USER CODE END WHILE */
 
@@ -446,8 +471,8 @@ void main_process_input(char option){
         break;
     case 'P':
     	// read input voltage on autolauncher
-    	analog_t vin = voltage_read(VOLTAGE_READ_SAMPLES);
-    	printf("[AD# %i] Vin= %i.%i V\r\n", vin.adcReading,(uint8_t)vin.realValue, (uint8_t)(vin.realValue * 10 - ((uint8_t)vin.realValue * 10)) );
+    	//analog_t vin = voltage_read(VOLTAGE_READ_SAMPLES);
+    	//printf("[AD# %i] Vin= %i.%i V\r\n", vin.adcReading,(uint8_t)vin.realValue, (uint8_t)(vin.realValue * 10 - ((uint8_t)vin.realValue * 10)) );
     	break;
     default:
         printf("\r\n** Unrecognized command!!** \r\n");
@@ -473,20 +498,7 @@ void config_process_input(char option){
         	char tubeError[] = "\r\nERROR: Enter 6 or 8 !\r\n";
         	char tubeCheck[] = {'6','8'};
         	get_user_input(tubePrompt, tubeError, 1, tubeCheck, tubes);
-//            print_inline("\r\nEnter AL tube count [6] or [8]: ");
-//            while(1){
-//            	if(rxStatus == active){
-//            		rxStatus = idle;
-//            		printf("%c\r\n", rxChar);
-//            		if(rxChar == '6' || rxChar == '8'){
-//            			launcher.tubeCount = rxChar;
-//            			break;
-//            		} else {
-//            			printf("\r\nError, Enter 6 or 8 !\r\n");
-//            			print_inline("\r\nEnter AL tube count [6] or [8]: ");
-//            		}
-//            	}
-//            }
+
             launcher.tubeCount = tubes[0];
             // get the autolauncher type, R regular or X extended, only for 8 tube AL
             if(launcher.tubeCount == '8'){
@@ -497,20 +509,6 @@ void config_process_input(char option){
             	get_user_input(typePrompt, typeError, 1, typeCheck, type);
             	launcher.type = type[0];
 
-//            	print_inline("Enter launcher type, [X] extended or [R] regular: ");
-//                while(1){
-//                	if(rxStatus == active){
-//                		rxStatus = idle;
-//                		printf("%c\r\n", rxChar);
-//                		if(rxChar == 'X' || rxChar == 'R'){
-//                			launcher.type = rxChar;
-//                			break;
-//                		} else {
-//                			printf("\r\nError, Enter X or R !\r\n");
-//                			print_inline("Enter launcher type, [X] extended or [R] regular: ");
-//                		}
-//                	}
-//                }
             } else {
             	launcher.type = '?'; // if not 8 tubes, reset type to unknown
             }
@@ -521,27 +519,6 @@ void config_process_input(char option){
         	char serialCheck[] = {'0','1','2','3','4','5','6','7','8','9'};
         	get_user_input(serialPrompt, serialError, 2, serialCheck, serial);
         	launcher.serialNumber = (uint8_t)(serial[0] - '0') * 10 + (serial[1] - '0'); // convert to number, subtract '0' (48 dec)
-//            print_inline("Enter a two-digit autolauncher serial number [0-99]: ");
-//            // get the 2 digit serial number
-//            char serial[2];
-//    		for(uint8_t i = 0; i < 2; i++){
-//    			while(1){
-//					if(rxStatus == active){
-//						rxStatus = idle;
-//						if(is_num(rxChar) == 1){ // check it's a number to store it
-//							serial[i] = rxChar;
-//							break;
-//						} else {
-//							printf("\r\nEnter only numbers!\r\n");
-//							i = 0; // restart index count
-//							print_inline("Enter a two-digit autolauncher serial number [0-99]: ");
-//						}
-//    				}
-//    			}
-//    		}
-//    		launcher.serialNumber = atoi(serial[0]) * 10 + atoi(serial[1]);
-//    		printf("%s\r\n", launcher.serialNumber);
-    		// set the AL configured flag and print configuration
             eeprom.configured = '|';
             printf("\r\nTubes: %c | Type: %c | Serial: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
 
@@ -549,27 +526,30 @@ void config_process_input(char option){
             eeprom_write(AL_TUBECOUNT, launcher.tubeCount);
             eeprom_write(AL_TYPE, launcher.type);
             eeprom_write(AL_SN, launcher.serialNumber);
-            //eeprom_write(AL_SN1, launcher.serialNumber[0]);
-            //eeprom_write(AL_SN2, launcher.serialNumber[1]);
             eeprom_write(AL_CONFIGED, eeprom.configured);
-
             printf("Settings saved!");
             printf("\r\nNew autolauncher configuration: Tubes: %c | Type: %c | Serial: %i | configed: %c\r\n", eeprom_read(AL_TUBECOUNT), eeprom_read(AL_TYPE), eeprom_read(AL_SN), eeprom_read(AL_CONFIGED));
 
             menu_config();
             break;
         case 'J':
-            //extend_all_pins();
         	printf("extend_all_pins()\r\n");
+        	if(launcher.tubeCount = '6')
+        		extend_all_pins(6);
+        	if(launcher.tubeCount = '8')
+        		extend_all_pins(8);
             break;
         case 'N':
-            //retract_all_pins();
         	printf("retract_all_pins()\r\n");
+        	if(launcher.tubeCount = '6')
+        		retract_all_pins(6);
+        	if(launcher.tubeCount = '8')
+        		retract_all_pins(8);
             break;
         case 'G':
             printf("\n\rSend the \"@\" symbol repeatedly to exit grease pins mode\r\n");
-            //grease_pins();
             printf("grease_pins();");
+            //grease_pins();
             break;
         case 'C':
         	uint8_t memStart, memEnd;
@@ -613,37 +593,6 @@ void config_process_input(char option){
     		motor.runTime = eeprom_read_uint32(M_RUNTIME);
     		printf("\r\nTubes: %c | Type: %c | Serial: %i | Runtime: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber, (int)motor.runTime);
 
-//			print_inline("\r\nEnter START memory address [0-127]: ");
-//			while(1){
-//				if(rxStatus == active){
-//					rxStatus = idle;
-//					printf("%c\r\n", rxChar);
-//					if(rxChar >= 0 && rxChar <= eeprom.MAX_MEM_ADDRESS){
-//						mstart = rxChar;
-//						break;
-//					} else {
-//						printf("\r\n* ERROR: memory out of range *\r\n");
-//						print_inline("\r\nEnter START memory address [0-127]: ");
-//					}
-//				}
-//			}
-//        	// get the memory range to clear - end
-//			print_inline("\r\nEnter END memory address [0-127]: ");
-//			while(1){
-//				if(rxStatus == active){
-//					rxStatus = idle;
-//					printf("%c\r\n", rxChar);
-//					if(rxChar >= 0 && rxChar <= eeprom.MAX_MEM_ADDRESS && rxChar >= mstart){
-//						mend = rxChar;
-//						break;
-//					} else {
-//						printf("\r\n* ERROR: memory out of range or mSTART > mEND *\r\n");
-//						print_inline("\r\nEnter END memory address [0-127]: ");
-//					}
-//				}
-//			}
-			//printf("%i blocks cleared\r\n", eeprom_clear(mstart, mend));
-
         	break;
         case 'T':
         	char mot[5];
@@ -653,30 +602,9 @@ void config_process_input(char option){
         	get_user_input(motorPrompt, motorError, 5, motorCheck, mot);
         	motor.runTime = (uint32_t)(mot[0] - '0') * 10000 + (mot[1] - '0') * 1000 + (mot[2] - '0') * 100 + (mot[3] - '0') * 10 + (mot[4] - '0');
 
-//        	printf("-- Stepper motor runtime setup --\r\n");
-//            print_inline("Enter a 5-digit number in milliseconds[02000-15000]: ");
-//            // get the 2 digit serial number
-//            char mtime[5];
-//    		for(uint8_t i = 0; i < 5; i++){
-//    			while(1){
-//					if(rxStatus == active){
-//						rxStatus = idle;
-//						if(is_num(rxChar) == 1){ // check it's a number to store it
-//							mtime[i] = rxChar;
-//							break;
-//						} else {
-//							printf("\r\nEnter only numbers!\r\n");
-//							i = 0; // restart index count
-//							print_inline("Enter a 5-digit number in milliseconds[02000-15000]: ");
-//						}
-//    				}
-//    			}
-//    		}
-//    		motor.runTime = (uint32_t)((mtime[0]-'0')*10000 + (mtime[0]-'0')*1000 + (mtime[0]-'0')*100 + (mtime[0]-'0')*10 + (mtime[0]-'0'));
     		printf("Motor ON time: %i ms\r\n", (int)motor.runTime);
     		eeprom_write_uint32(M_RUNTIME, motor.runTime);
     		printf("Setting saved! Runtime: %i\r\n\r\n", (int)eeprom_read_uint32(M_RUNTIME));
-
 
         	break;
         default:
@@ -787,9 +715,10 @@ void get_user_input(char promptMsg[], char errorMsg[], uint8_t count, char check
 
 /* Print a single character for echo in line */
 void print_char(uint8_t * ch){
-	HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, 100);
+	HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, 10);
 }
 
+/* Print serial number based on AL configuration saved */
 void print_serial_number(void){
 	//printf( "AL%c%s", launcher.type[0], launcher.serialNumber);
     if(eeprom.configured == '|'){
@@ -829,12 +758,6 @@ void print_inline(char * text){
 	}
 }
 
-/* Support printf over UART
-   Warning: printf() only empties the buffer and prints after seeing an \n */
-//int __io_putchar(int ch){
-//	(void) HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, HAL_MAX_DELAY);
-//	return ch;
-//}
 
 /* Initialize autolauncher parameters */
 void parameter_init(void){
@@ -856,12 +779,6 @@ void parameter_init(void){
 	} else {
 		printf("\r\n... Configuration NOT found in memory ... \r\n");
 	}
-
-	// test, remove
-//	uint32_t before = eeprom_read_uint32(M_RUNTIME);
-//	eeprom_write_uint32(M_RUNTIME, 10500);
-//	uint32_t after = eeprom_read_uint32(M_RUNTIME);
-//	printf("Runtime: before(%i), after(%i)\r\n", before,after);
 }
 
 /* UART Receive complete interrupt callback, set rxStatus flag for new char received
@@ -875,7 +792,29 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart){
 	}
 }
 
-/* wrapper for 1st uart_rx call
+/* Timer period finished callback for TIM2
+ * Used to trigger an ADC scan conversion in DMA mode for current, voltage and internal temperature */
+//void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+//	if(htim->Instance == TIM4){
+//		adcTimerTrigger = 1;
+//		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+//	}
+//}
+
+/* When the ADC conversion in DMA mode is complete (all samples in adc scan)
+ * Then the IRQ calls this function */
+//void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
+//	//HAL_ADC_Stop_DMA(&hadc1);
+//	if(hadc->Instance == ADC1){
+//		adcComplete = 1;
+//		//HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+//		//HAL_ADC_Stop_DMA(&hadc1);
+//	}
+//}
+
+
+
+/* Wrapper for 1st uart_rx call
  * The interrupt is enabled for rx after this function is called, and then disabled until called again */
 void uartrx_interrupt_init(void){
 	HAL_UART_Receive_IT(&huart1, (uint8_t *) rxBuffer, 1); // enable UART receive interrupt, store received char in rxChar buffer
@@ -920,7 +859,7 @@ void unground_xbt(void){
 void calibration_resistor(void){
 	if(relayLock == reFree){
 		relayLock = reLocked;
-		drive_relay(RELAY_K12_CAL_RES_GPIO_Port, RELAY_K12_CAL_RES_Pin, 10); // SET relay k12
+		drive_relay(RELAY_K12_CAL_RES_GPIO_Port, RELAY_K12_CAL_RES_Pin, RELAY_ON_TIME); // SET relay k12
 		relayLock = reFree;
 	}
 }
@@ -928,7 +867,7 @@ void calibration_resistor(void){
 void calibrate_on(void){
 	if(relayLock == reFree){
 		relayLock = reLocked;
-		drive_relay(RELAY_K11_CAL_CONT_GPIO_Port, RELAY_K11_CAL_CONT_Pin, 10); // SET relay k11
+		drive_relay(RELAY_K11_CAL_CONT_GPIO_Port, RELAY_K11_CAL_CONT_Pin, RELAY_ON_TIME); // SET relay k11
 		relayLock = reFree;
 	}
 }
@@ -936,11 +875,11 @@ void calibrate_on(void){
 void reset_relay(void){
 	if(relayLock == reFree){
 		relayLock = reLocked;
-		drive_relay(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, 10); // RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
-		HAL_Delay(10);
-		drive_relay(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, 10); // RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
-		HAL_Delay(10);
-		drive_relay(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, 10); // RESET relay k9, k10, k11, k12 - This grounds ABC
+		drive_relay(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, RELAY_ON_TIME); // RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
+		HAL_Delay(RELAY_INTERVAL_TIME);
+		drive_relay(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, RELAY_ON_TIME); // RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
+		HAL_Delay(RELAY_INTERVAL_TIME);
+		drive_relay(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, RELAY_ON_TIME); // RESET relay k9, k10, k11, k12 - This grounds ABC
 		relayLock = reFree;
 	}
 }
@@ -952,35 +891,35 @@ void connect_xbt_pin(uint8_t xbtNum){
 
 		switch (xbtNum){
 		case 1:
-			drive_relay(RELAY_K1_GPIO_Port, RELAY_K1_Pin, 10); // SET relay k1
+			drive_relay(RELAY_K1_GPIO_Port, RELAY_K1_Pin, RELAY_ON_TIME); // SET relay k1
 			drive_relay(SSR_1_GPIO_Port, SSR_1_Pin, 1); // SET SSR1
 			break;
 		case 2:
-			drive_relay(RELAY_K2_GPIO_Port, RELAY_K2_Pin, 10); // SET relay k2
+			drive_relay(RELAY_K2_GPIO_Port, RELAY_K2_Pin, RELAY_ON_TIME); // SET relay k2
 			drive_relay(SSR_2_GPIO_Port, SSR_2_Pin, 1); // SET SSR2
 			break;
 		case 3:
-			drive_relay(RELAY_K3_GPIO_Port, RELAY_K3_Pin, 10); // SET relay k3
+			drive_relay(RELAY_K3_GPIO_Port, RELAY_K3_Pin, RELAY_ON_TIME); // SET relay k3
 			drive_relay(SSR_3_GPIO_Port, SSR_3_Pin, 1); // SET SSR3
 			break;
 		case 4:
-			drive_relay(RELAY_K4_GPIO_Port, RELAY_K4_Pin, 10); // SET relay k4
+			drive_relay(RELAY_K4_GPIO_Port, RELAY_K4_Pin, RELAY_ON_TIME); // SET relay k4
 			drive_relay(SSR_4_GPIO_Port, SSR_4_Pin, 1); // SET SSR4
 			break;
 		case 5:
-			drive_relay(RELAY_K5_GPIO_Port, RELAY_K5_Pin, 10); // SET relay k5
+			drive_relay(RELAY_K5_GPIO_Port, RELAY_K5_Pin, RELAY_ON_TIME); // SET relay k5
 			drive_relay(SSR_5_GPIO_Port, SSR_5_Pin, 1); // SET SSR5
 			break;
 		case 6:
-			drive_relay(RELAY_K6_GPIO_Port, RELAY_K6_Pin, 10); // SET relay k6
+			drive_relay(RELAY_K6_GPIO_Port, RELAY_K6_Pin, RELAY_ON_TIME); // SET relay k6
 			drive_relay(SSR_6_GPIO_Port, SSR_6_Pin, 1); // SET SSR6
 			break;
 		case 7:
-			drive_relay(RELAY_K7_GPIO_Port, RELAY_K7_Pin, 10); // SET relay k7
+			drive_relay(RELAY_K7_GPIO_Port, RELAY_K7_Pin, RELAY_ON_TIME); // SET relay k7
 			drive_relay(SSR_7_GPIO_Port, SSR_7_Pin, 1); // SET SSR7
 			break;
 		case 8:
-			drive_relay(RELAY_K8_GPIO_Port, RELAY_K8_Pin, 10); // SET relay k8
+			drive_relay(RELAY_K8_GPIO_Port, RELAY_K8_Pin, RELAY_ON_TIME); // SET relay k8
 			drive_relay(SSR_8_GPIO_Port, SSR_8_Pin, 1); // SET SSR8
 			break;
 		default:
@@ -992,11 +931,11 @@ void connect_xbt_pin(uint8_t xbtNum){
 }
 
 void relay_init(void){
-	drive_relay(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, 10);  // RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
-	HAL_Delay(10);
-	drive_relay(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, 10); // RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
-	HAL_Delay(10);
-	drive_relay(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, 10); // RESET relay k9, k10, k11, k12 (GND, calibration and continuity circuit)
+	drive_relay(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, RELAY_ON_TIME);  // RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
+	HAL_Delay(RELAY_INTERVAL_TIME);
+	drive_relay(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, RELAY_ON_TIME); // RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
+	HAL_Delay(RELAY_INTERVAL_TIME);
+	drive_relay(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, RELAY_ON_TIME); // RESET relay k9, k10, k11, k12 (GND, calibration and continuity circuit)
 }
 
 
@@ -1011,9 +950,31 @@ void drive_relay(GPIO_TypeDef * relayPort, uint16_t relayPin, uint8_t onTime){
 
 /*********************** MOTOR CONTROL FUNCTIONS ***********************/
 
-// ALV2 had a sequence with 4 delays of 8 ms, repeated in 300 steps = 4 * 8 ms * 300 = 7200 ms
+// ALV2 (previous firmware) had a sequence with 4 delays of 8 ms, repeated in 300 steps = 4 * 8 ms * 300 = 7200 ms
 
-/* Extend pin wrapper */
+/* Extend all pins up to countLimit or eeprom.tubes, whichever is smaller
+ * Parameter: countLimit, extend all pins up to this number */
+void extend_all_pins(uint8_t countLimit){
+	if(countLimit > 0){
+		for(uint8_t i = 1; (i <= countLimit) && (i <= launcher.tubeCount); i++){
+			extend_pin(i);
+		}
+	}
+}
+
+/* Retract all pins up to countLimit or eeprom.tubes, whichever is smaller
+ * Parameter: countLimit, retract all pins up to this number */
+void retract_all_pins(uint8_t countLimit){
+	if(countLimit > 0){
+		for(uint8_t i = 1; (i <= countLimit) && (i <= launcher.tubeCount); i++){
+			retract_pin(i);
+		}
+	}
+}
+
+
+/* Extend pin wrapper
+ * Parameter: xbtNum [1-8] */
 void extend_pin(uint8_t xbtNum){
 	if (MOTOR_WIRING == 0){ // select spin direction based on wiring
 		motor_select(xbtNum, CW);
@@ -1022,7 +983,8 @@ void extend_pin(uint8_t xbtNum){
 	}
 }
 
-/* Retract pin wrapper */
+/* Retract pin wrapper
+ * Parameter: xbtNum [1-8] */
 void retract_pin(uint8_t xbtNum){
 	if (MOTOR_WIRING == 0){ // select spin direction based on wiring
 		motor_select(xbtNum, CCW);
@@ -1071,11 +1033,156 @@ void motor_select(uint8_t xbtNum, motorDir_t dir){
 }
 
 
-/*********************** EEPROM FUNCTIONS ***********************/
+void motor_init(void){
+	  HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // start disabled
+	  HAL_GPIO_WritePin(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, RESET); // start disabled
+	  HAL_GPIO_WritePin(ENABLE_M3_GPIO_Port, ENABLE_M3_Pin, RESET); // start disabled
+	  HAL_GPIO_WritePin(ENABLE_M4_GPIO_Port, ENABLE_M4_Pin, RESET); // start disabled
+	  HAL_GPIO_WritePin(ENABLE_M5_GPIO_Port, ENABLE_M5_Pin, RESET); // start disabled
+	  HAL_GPIO_WritePin(ENABLE_M6_GPIO_Port, ENABLE_M6_Pin, RESET); // start disabled
+	  HAL_GPIO_WritePin(ENABLE_M7_GPIO_Port, ENABLE_M7_Pin, RESET); // start disabled
+	  HAL_GPIO_WritePin(ENABLE_M8_GPIO_Port, ENABLE_M8_Pin, RESET); // start disabled
+}
+
+void drive_motor(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t motorDirection, uint32_t runTime ){
+	uint32_t timeStart, timeNow, adcReading = 0;
+	uint16_t adcBuffer[ADC_BUFFER_SAMPLES] = {'\0'}; // store 3 ADC measurements in DMA mode: [Vin0,Im0,TempInt0,Vin1,Im1,...]
+	uint32_t rawCurrent = 0, rawVoltage = 0, rawTemperature = 0;
+	float current = 0, voltage = 0, temperature = 0;
+	uint8_t current_dec = 0, voltage_dec = 0, temperature_dec = 0; // display 2 decimal values
+//	const float AVG_SLOPE_avg = 4.3, AVG_SLOPE_min = 4.0, AVG_SLOPE_max = 4.6; // average slope [mV/C]
+//	const float V25_avg = 1430, V25_min = 1340, V25_max = 1520 ; // Voltage at 25 degrees [mV]
+	const float AVG_SLOPE_avg = 4.3, V25_avg = 1430;
+	uint16_t adcSampleCount = 0;
+//	char adcmsg[50];
+
+	// Initialize PWM
+	// HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 ); // Start STEP signal >> counter to toggle every 20/1000 sec = 50hz
+	HAL_GPIO_WritePin(motorPort, motorPin, RESET); // make sure driver pin is disabled
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3); // initialize PWM pulses for DRV8826
+	//HAL_Delay(10); // wait for the motor to stop
+	HAL_GPIO_WritePin(DIR_GPIO_Port,DIR_Pin, motorDirection); // set motor direction
+	HAL_GPIO_WritePin(motorPort, motorPin, SET); // enable driver to run motor
+
+	timeStart = HAL_GetTick(); // initial timer count using SysTick timer (32 bit variable uwTick incremented every 1 ms, MAX = 50 days)
+
+	// get 1 current, voltage, temp reading every 500 ms using TIM2 interrupts
+	//HAL_TIM_Base_Start_IT(&htim4); // generates 1 interrupt every 500 ms
+	//HAL_ADC_Start_DMA(&hadc1, adcBuffer, 3); // take first sample at motor startup
+	HAL_TIM_PWM_Start_IT(&htim4, TIM_CHANNEL_4); // trigger adc conversions in DMA mode every x ms
+
+	while(1){
+		// track motor runtime and break loop after desired time elapsed
+		timeNow = HAL_GetTick();
+		if(timeNow >= timeStart){
+			if((timeNow - timeStart) >= runTime) break;
+		} else { // if timeNow < timeStart, this only happens when uwTick ~ 2^32 (50 days) and there was an overflow
+			if( (HAL_MAX_DELAY - timeStart + timeNow) >= runTime) break;
+		}
+		// check if user sent stop signal
+		if(active == rxStatus){ // set to active with UART RX interrupt
+			rxStatus = idle;
+			if(rxChar == '@'){
+				printf("Motor Stopped by user!\r\n");
+				break;
+			}
+		}
+
+		// if adc buffer not full, start dma and take 3 samples of each channel
+//		if( adcComplete == 0 ){
+//			HAL_ADC_Start_DMA(&hadc1, (uint32_t *) adcBuffer, 9);
+//		}
+		// when timer 2 interrupt sets adcTimerTrigger, start an ADC conversion in DMA mode
+//		if(adcTimerTrigger == 1){
+//			adcTimerTrigger = 0;
+//			HAL_ADC_Start_DMA(&hadc1, adcBuffer, ADC_BUFFER_SAMPLES); // start conversion scan
+//		}
+
+		// when timer 4 sets the flag, take samples, average and print
+		if(adcTimerTrigger == 1){
+			// reset flag
+			adcTimerTrigger = 0;
+			// Sample ADC scan (3 channels)
+			for(uint16_t j = 0; j < ADC_BUFFER_SAMPLES/3; j++){
+				HAL_ADC_Start_DMA(&hadc1, adcBuffer, ADC_BUFFER_SAMPLES);
+			}
+
+			// reset accumulators
+			rawCurrent = 0;
+			rawVoltage = 0;
+			rawTemperature = 0;
+			// average
+			for(uint16_t i = 0; i < ADC_BUFFER_SAMPLES; i=i+3){
+				rawVoltage += adcBuffer[i];
+				rawCurrent += adcBuffer[i+1];
+				rawTemperature += adcBuffer[i+2];
+			}
+			// calculate averages and real values
+			// voltage
+			rawVoltage = (uint32_t) ((float) rawVoltage) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts, divide by 3 num of buffer slots since each scan has 3 readings
+			voltage = (float) rawVoltage * 0.0083 + 0.3963; // calibration coeff should be taken from eeprom
+			voltage_dec = (uint8_t)(voltage * 10 - ((uint8_t)voltage * 10)); // ex. 15.3 = 15 . (153 - 150)
+			// current
+			rawCurrent = (uint32_t) ((float) rawCurrent) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts
+			current =  (float) rawCurrent * 0.163 + 7.3581; // mA - opAmp G = 50, Rsense = 0.10 ohm
+			current_dec = (uint8_t)(current * 10 - ((uint8_t)current * 10));
+			// internal temperature
+			rawTemperature = (uint32_t) ((float) rawTemperature) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts
+			temperature = ( (V25_avg - (rawTemperature * (3300.0/4096.0) ) )  / AVG_SLOPE_avg) + 25.0 ;
+			temperature_dec = (uint8_t)(temperature * 10 - ((uint8_t)temperature * 10));
+
+			// print
+			printf("<%i> CURRENT[AD# %d]: %i.%i mA | VOLTAGE_IN[AD# %i]: %i.%i V | INT TEMP[AD# %i]: %i.%i C\r\n"
+					, (int)adcSampleCount, rawCurrent, (int)current, (int)current_dec, rawVoltage, (int)voltage, (int)voltage_dec, rawTemperature, (int)temperature, (int)temperature_dec);
+
+			// increase sample counter
+			adcSampleCount++;
+			// re-enable ADC conversions
+			//HAL_ADC_Start_DMA(&hadc1, (uint32_t *) adcBuffer, 9);
+		}
+
+	}
+
+
+	HAL_GPIO_WritePin(motorPort, motorPin, RESET); // disable motor driver
+	//HAL_TIM_Base_Stop_IT(&htim4); // stop timer interrupts for ADC conversions
+	HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_3); // stop PWM signal to step the motor
+
+	HAL_ADC_Stop_DMA(&hadc1); // stop ADC conversion if there was one triggered before exiting the while(1)
+	HAL_TIM_PWM_Stop_IT(&htim4, TIM_CHANNEL_4); // stop timer triggering adc conversions
+
+	// old
+//	for (uint8_t ci = 1; ci < 20; ci++){
+//		adcReading = 0;
+//		for(uint8_t cj = 0; cj<100; cj++){
+//			HAL_ADC_Start(&hadc2);
+//			HAL_ADC_PollForConversion(&hadc2, 100);
+//			adcReading += HAL_ADC_GetValue(&hadc2);
+//			HAL_ADC_Stop(&hadc2);
+//			HAL_Delay(1);
+//		}
+//		adcReading = adcReading/100;
+//		motor_i = (uint16_t) (adcReading * 0.163 + 7.3581); // mA - opAmp G = 50, Rsense = 0.10 ohm
+//
+//		sprintf(adcmsg, "[AD# %d] Im_%d = %d mA\r\n", (int)adcReading, ci ,(int) motor_i);
+//		HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
+//		HAL_Delay(500);
+//		if((HAL_GetTick() - runStart) > runtime) break;
+//	}
+//	HAL_GPIO_WritePin(motorPort, motorPin, RESET); // disable driver
+//	HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_3 );
+
+}
+
+
+
+/*************************************** EEPROM FUNCTIONS ***************************************/
 /* Model: Microchip AT24XX01
  * Max freq 1 MHz, 1 Kbit memory (1024 bit), 128 x 8-bit block, 5 ms page write,
  * 8-Byte write pages, fixed device address 1010-xxxRW, 128 bytes memory range {00-7F} */
 
+/* Write 1 byte in epprom
+ * Parameters: memory address [0-127], 1 byte of data */
 void eeprom_write(uint8_t memoryAddress, uint8_t dataByte){
 	uint8_t txBuff[2] = {memoryAddress, dataByte};
 	if(memoryAddress <= eeprom.MAX_MEM_ADDRESS ){
@@ -1086,6 +1193,9 @@ void eeprom_write(uint8_t memoryAddress, uint8_t dataByte){
 	}
 }
 
+/* Read 1 byte from epprom
+ * Parameters: memory address [0-127]
+ * Returns 1 byte of data */
 uint8_t eeprom_read(uint8_t memoryAddress){
 	uint8_t addressBuffer[1] = {memoryAddress};
 	uint8_t rxBuff[1] = {0};
@@ -1462,53 +1572,7 @@ uint8_t processInput(char option){
 }
 
 
-void motor_init(void){
-	  HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // start disabled
-	  HAL_GPIO_WritePin(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, RESET); // start disabled
-	  HAL_GPIO_WritePin(ENABLE_M3_GPIO_Port, ENABLE_M3_Pin, RESET); // start disabled
-	  HAL_GPIO_WritePin(ENABLE_M4_GPIO_Port, ENABLE_M4_Pin, RESET); // start disabled
-	  HAL_GPIO_WritePin(ENABLE_M5_GPIO_Port, ENABLE_M5_Pin, RESET); // start disabled
-	  HAL_GPIO_WritePin(ENABLE_M6_GPIO_Port, ENABLE_M6_Pin, RESET); // start disabled
-	  HAL_GPIO_WritePin(ENABLE_M7_GPIO_Port, ENABLE_M7_Pin, RESET); // start disabled
-	  HAL_GPIO_WritePin(ENABLE_M8_GPIO_Port, ENABLE_M8_Pin, RESET); // start disabled
-}
 
-void drive_motor(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t motorDirection, uint32_t runtime ){
-	uint32_t t0, adcReading = 0;
-	uint16_t motor_i = 0;
-	char adcmsg[50];
-
-	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 ); // Start STEP signal >> counter toggle to toggle every 20/1000 sec = 50hz
-	// motor
-	HAL_GPIO_WritePin(motorPort, motorPin, RESET); // make sure to disable driver
-	HAL_Delay(10); // wait for the motor to stop
-	HAL_GPIO_WritePin(DIR_GPIO_Port,DIR_Pin, motorDirection); // set motor direction
-	HAL_GPIO_WritePin(motorPort, motorPin, SET); // enable driver to run motor
-	// read current
-	// should launch a timer here and stop it after X seconds
-	t0 = HAL_GetTick();
-
-	for (uint8_t ci = 1; ci < 20; ci++){
-		adcReading = 0;
-		for(uint8_t cj = 0; cj<100; cj++){
-			HAL_ADC_Start(&hadc2);
-			HAL_ADC_PollForConversion(&hadc2, 100);
-			adcReading += HAL_ADC_GetValue(&hadc2);
-			HAL_ADC_Stop(&hadc2);
-			HAL_Delay(1);
-		}
-		adcReading = adcReading/100;
-		motor_i = (uint16_t) (adcReading * 0.163 + 7.3581); // mA - opAmp G = 50, Rsense = 0.10 ohm
-
-		sprintf(adcmsg, "[AD# %d] Im_%d = %d mA\r\n", (int)adcReading, ci ,(int) motor_i);
-		HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
-		HAL_Delay(1000);
-		if((HAL_GetTick() - t0) > runtime) break;
-	}
-	HAL_GPIO_WritePin(motorPort, motorPin, RESET); // disable driver
-	HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_3 );
-
-}
 
 
 /***************************************** END AUTOLAUNCHER FUNCTIONS *****************************************/

@@ -63,6 +63,10 @@ void Error_Handler(void);
 #define SSR_2_GPIO_Port GPIOC
 #define SSR_1_Pin GPIO_PIN_15
 #define SSR_1_GPIO_Port GPIOC
+#define ADC_VOLT_Pin GPIO_PIN_0
+#define ADC_VOLT_GPIO_Port GPIOC
+#define ADC_AMP_Pin GPIO_PIN_1
+#define ADC_AMP_GPIO_Port GPIOC
 #define ENABLE_M1_Pin GPIO_PIN_2
 #define ENABLE_M1_GPIO_Port GPIOC
 #define ENABLE_M2_Pin GPIO_PIN_3
@@ -83,6 +87,8 @@ void Error_Handler(void);
 #define ENABLE_M8_GPIO_Port GPIOA
 #define DIR_Pin GPIO_PIN_4
 #define DIR_GPIO_Port GPIOC
+#define MOTOR_PWM_Pin GPIO_PIN_0
+#define MOTOR_PWM_GPIO_Port GPIOB
 #define LED_Pin GPIO_PIN_1
 #define LED_GPIO_Port GPIOB
 #define SSR_8_Pin GPIO_PIN_14
