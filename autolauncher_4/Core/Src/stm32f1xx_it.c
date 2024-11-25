@@ -226,7 +226,7 @@ void TIM4_IRQHandler(void)
   HAL_TIM_IRQHandler(&htim4);
   /* USER CODE BEGIN TIM4_IRQn 1 */
   adcTimerTrigger = 1;
-  HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+  //HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
   /* USER CODE END TIM4_IRQn 1 */
 }
 

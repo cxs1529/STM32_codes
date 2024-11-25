@@ -37,8 +37,9 @@
 /* USER CODE BEGIN PTD */
 typedef enum {CCW, CW} motorDir_t; // Relay Control variables
 typedef enum {MUX_GPS, MUX_STM32} mux_t; // TX from GPS MUX=0, TX from microcontroller MUX=1
-typedef enum {AL_TUBECOUNT, AL_TYPE, AL_SN, AL_CONFIGED, M_RUNTIME = 8 } memoryMap_t; // pages 0-7, 8-15, 16-23, 24-31, 32-39,
-
+typedef enum {AL_TUBECOUNT1B, AL_TYPE1B, AL_SN1B, AL_CONFIGED1B, M_RUNTIME4B = 8,
+				M_1COUNT2B = 16, M_2COUNT2B = 18, M_3COUNT2B = 20, M_4COUNT2B = 22, M_5COUNT2B = 24, M_6COUNT2B = 26, M_7COUNT2B = 28, M_8COUNT2B = 30,
+				M_1MXAMP2B = 32, M_2MXAMP2B = 34, M_3MXAMP2B = 36, M_4MXAMP2B = 38, M_5MXAMP2B = 40, M_6MXAMP2B = 42, M_7MXAMP2B = 44, M_8MXAMP2B = 46} memoryMap_t; // pages 0-7, 8-15, 16-23, 24-31, 32-39,
 
 typedef struct {
 	uint8_t serialNumber; // 2 digit autolauncher S/N XX [0-255]
@@ -61,9 +62,15 @@ typedef struct {
 } motor_t;
 
 typedef struct {
-	uint16_t adcReading;
-	float realValue;
+	uint32_t rawValue; // AD# counts
+	float realValue; // physical value
 } analog_t;
+
+typedef struct {
+	analog_t voltage;
+	analog_t current;
+	analog_t temperature;
+} adcScan_t;
 
 /* USER CODE END PTD */
 
@@ -100,8 +107,8 @@ motor_t motor = {10000, {0,0,0,0,0,0,0,0}, {0,0,0,0,0,0,0,0,} }; // runtime, ima
 char rxBuffer[1] = "\0"; // UART1 receive buffer from computer, a char will be stored here with UART interrupt
 char rxChar = '\0'; // UART1 receive character, == xBuffer[0]
 uint8_t adcComplete = 0; // flag used to print ADC values
-uint8_t adcTimerTrigger = 0; // flag used to trigger an ADC conversion in DMA mode
-uint8_t adcDMAFull = 0; // this flag is set by the DMA IRQ when the adc buffer is full (stm32f1xx_it.c)
+uint8_t adcTimerTrigger = 0; // flag used to trigger an ADC conversion in DMA mode, located in TIM4_IRQHandler(void) (stm32f1xx_it.c)
+uint8_t adcDMAFull = 0; // this flag is set by the DMA IRQ when the adc buffer is full, located in DMA1_Channel1_IRQHandler(void) (stm32f1xx_it.c)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -111,12 +118,15 @@ void SystemClock_Config(void);
 // Auxiliar functions
 void get_user_input(char promptMsg[], char errorMsg[], uint8_t count, char checkList[], char * output);
 void print_inline(char * text);
-void print_char(uint8_t * ch);
+void print_char(char * ch);
 uint8_t is_num(char c);
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart);
 void print_serial_number(void);
 void uartrx_interrupt_init(void);
-analog_t voltage_read(uint8_t samples);
+void test_func(void); // random tests
+//analog_t voltage_read(void);
+uint8_t get_decimal(float value, uint8_t digits);
+adcScan_t get_adc_values(void);
 // Menu control functions
 void menu_init(void);
 void menu_main(void);
@@ -152,7 +162,10 @@ void eeprom_write(uint8_t memoryAddress, uint8_t dataByte);
 void eeprom_print_map(void);
 uint8_t eeprom_clear(uint8_t memoryStart, uint8_t memoryEnd);
 uint32_t eeprom_read_uint32(uint8_t memoryStart);
-void eeprom_write_uint32(uint8_t memoryStart, uint32_t data);
+void eeprom_write_uint32(uint8_t baseAddress, uint32_t data);
+void eeprom_write_nbytes(uint8_t baseAddress, uint8_t bytes, void * pData);
+void eeprom_read_nbytes(uint8_t baseAddress, uint8_t bytes, void * pData);
+//void eeprom_write_nbytes(uint8_t baseAddress, uint8_t bytes, void * pData);
 void parameter_init(void);
 /* USER CODE END PFP */
 
@@ -214,20 +227,7 @@ int main(void)
   // display main menu at startup
   menu_main();
 
-  // test timer 4
-//  uint16_t buf[30];
-
-
-//  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
-//  while(!dmaFull){
-//	  HAL_ADC_Start_DMA(&hadc1, (uint32_t *) buf, 30);
-//  }
-//  HAL_Delay(5);
-////  HAL_TIM_Base_Start_IT(&htim4);
-//  for(uint8_t i = 0; i < 30; i = i+3){
-//	  printf("<%i> %i | %i | %i\r\n", i, buf[i],buf[i+1],buf[i+2]);
-//  }
-//  HAL_TIM_Base_Stop_IT(&htim4);
+  test_func();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -304,7 +304,19 @@ void SystemClock_Config(void)
 
 /***************************************** START AUTOLAUNCHER FUNCTIONS *****************************************/
 
+void test_func(void){
+	uint16_t a = 30000;
+	eeprom_write_nbytes(64, 2, &a);
+	uint16_t b;
+	eeprom_read_nbytes(64, 2, &b);
+	printf("b is: %i", (int)b);
 
+	float c = 3.1415;
+	eeprom_write_nbytes(64, 4, &c);
+	float d;
+	eeprom_read_nbytes(64, 4, &d);
+	printf("d is: %i.%i", (int)d, (int)(10000 * (float)(d - (uint8_t)d)));
+}
 
 
 /* Process char received while in Main menu */
@@ -470,7 +482,11 @@ void main_process_input(char option){
         printf("\r\n");
         break;
     case 'P':
-    	// read input voltage on autolauncher
+    	// read input voltage and internal temp on autolauncher
+    	adcScan_t adcReading = get_adc_values();
+		printf("\r\nVOLTAGE[AD# %i]: %i.%i V | TEMPERATURE[AD# %i]: %i.%i C\r\n",
+					 (int)adcReading.voltage.rawValue, (int)adcReading.voltage.realValue, get_decimal(adcReading.voltage.realValue, 1),
+					 (int)adcReading.temperature.rawValue, (int)adcReading.voltage.realValue, get_decimal(adcReading.temperature.realValue, 1));
     	//analog_t vin = voltage_read(VOLTAGE_READ_SAMPLES);
     	//printf("[AD# %i] Vin= %i.%i V\r\n", vin.adcReading,(uint8_t)vin.realValue, (uint8_t)(vin.realValue * 10 - ((uint8_t)vin.realValue * 10)) );
     	break;
@@ -523,12 +539,12 @@ void config_process_input(char option){
             printf("\r\nTubes: %c | Type: %c | Serial: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
 
             // store parameters in eeprom
-            eeprom_write(AL_TUBECOUNT, launcher.tubeCount);
-            eeprom_write(AL_TYPE, launcher.type);
-            eeprom_write(AL_SN, launcher.serialNumber);
-            eeprom_write(AL_CONFIGED, eeprom.configured);
+            eeprom_write(AL_TUBECOUNT1B, launcher.tubeCount);
+            eeprom_write(AL_TYPE1B, launcher.type);
+            eeprom_write(AL_SN1B, launcher.serialNumber);
+            eeprom_write(AL_CONFIGED1B, eeprom.configured);
             printf("Settings saved!");
-            printf("\r\nNew autolauncher configuration: Tubes: %c | Type: %c | Serial: %i | configed: %c\r\n", eeprom_read(AL_TUBECOUNT), eeprom_read(AL_TYPE), eeprom_read(AL_SN), eeprom_read(AL_CONFIGED));
+            printf("\r\nNew autolauncher configuration: Tubes: %c | Type: %c | Serial: %i | configed: %c\r\n", eeprom_read(AL_TUBECOUNT1B), eeprom_read(AL_TYPE1B), eeprom_read(AL_SN1B), eeprom_read(AL_CONFIGED1B));
 
             menu_config();
             break;
@@ -586,11 +602,11 @@ void config_process_input(char option){
         	} while ( validMemory == 0 );
         	printf("%i blocks cleared\r\n", eeprom_clear(memStart, memEnd));
         	// update variables with new stored values
-    		launcher.tubeCount = eeprom_read(AL_TUBECOUNT);
-    		launcher.type = eeprom_read(AL_TYPE);
-    		launcher.serialNumber = eeprom_read(AL_SN);
-    		eeprom.configured = eeprom_read(AL_CONFIGED);
-    		motor.runTime = eeprom_read_uint32(M_RUNTIME);
+    		launcher.tubeCount = eeprom_read(AL_TUBECOUNT1B);
+    		launcher.type = eeprom_read(AL_TYPE1B);
+    		launcher.serialNumber = eeprom_read(AL_SN1B);
+    		eeprom.configured = eeprom_read(AL_CONFIGED1B);
+    		motor.runTime = eeprom_read_uint32(M_RUNTIME4B);
     		printf("\r\nTubes: %c | Type: %c | Serial: %i | Runtime: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber, (int)motor.runTime);
 
         	break;
@@ -603,8 +619,8 @@ void config_process_input(char option){
         	motor.runTime = (uint32_t)(mot[0] - '0') * 10000 + (mot[1] - '0') * 1000 + (mot[2] - '0') * 100 + (mot[3] - '0') * 10 + (mot[4] - '0');
 
     		printf("Motor ON time: %i ms\r\n", (int)motor.runTime);
-    		eeprom_write_uint32(M_RUNTIME, motor.runTime);
-    		printf("Setting saved! Runtime: %i\r\n\r\n", (int)eeprom_read_uint32(M_RUNTIME));
+    		eeprom_write_uint32(M_RUNTIME4B, motor.runTime);
+    		printf("Setting saved! Runtime: %i\r\n\r\n", (int)eeprom_read_uint32(M_RUNTIME4B));
 
         	break;
         default:
@@ -714,7 +730,7 @@ void get_user_input(char promptMsg[], char errorMsg[], uint8_t count, char check
 }
 
 /* Print a single character for echo in line */
-void print_char(uint8_t * ch){
+void print_char(char * ch){
 	HAL_UART_Transmit(&huart1, (uint8_t *) &ch, 1, 10);
 }
 
@@ -762,23 +778,25 @@ void print_inline(char * text){
 /* Initialize autolauncher parameters */
 void parameter_init(void){
 	// get parameters from eeprom or assign default values
-	eeprom.configured = eeprom_read(AL_CONFIGED);
+	eeprom.configured = eeprom_read(AL_CONFIGED1B);
 	if(eeprom.configured == '|'){
 		printf("\r\n... Configuration found in memory ... \r\n");
-		launcher.tubeCount = eeprom_read(AL_TUBECOUNT);
-		launcher.type = eeprom_read(AL_TYPE);
-		launcher.serialNumber = eeprom_read(AL_SN);
+		launcher.tubeCount = eeprom_read(AL_TUBECOUNT1B);
+		launcher.type = eeprom_read(AL_TYPE1B);
+		launcher.serialNumber = eeprom_read(AL_SN1B);
 		// read motor runtime and assign a default value if out of range
-		uint32_t rt = eeprom_read_uint32(M_RUNTIME);
+		uint32_t rt = eeprom_read_uint32(M_RUNTIME4B);
 		if(rt > MOTOR_RUNTIME_MIN && rt < MOTOR_RUNTIME_MAX)
 			motor.runTime = rt;
 		else
 			motor.runTime = MOTOR_RUNTIME;
-		//launcher.serialNumber[1] = eeprom_read(AL_SN2);
+
 		printf("\r\nTubes: %c | Type: %c | Serial: %i | Runtime: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber, (int)motor.runTime);
 	} else {
 		printf("\r\n... Configuration NOT found in memory ... \r\n");
 	}
+
+
 }
 
 /* UART Receive complete interrupt callback, set rxStatus flag for new char received
@@ -821,24 +839,25 @@ void uartrx_interrupt_init(void){
 }
 
 
-analog_t voltage_read(uint8_t samples){
-	analog_t voltage = {0, 0.0};
-	// take an average of samples
-	for(uint8_t i = 0; i<samples; i++){
-		HAL_ADC_Start(&hadc1);
-		HAL_ADC_PollForConversion(&hadc1, 10);
-		voltage.adcReading += HAL_ADC_GetValue(&hadc1);
-		HAL_ADC_Stop(&hadc1);
-		HAL_Delay(1);
-	}
-	voltage.adcReading = voltage.adcReading/samples;
-	voltage.realValue = voltage.adcReading * 0.0083 + 0.3963; // 15.23 store coef. in eeprom
+//
+//adcScan_t voltage_read(void){
+//	//analog_t voltage = {0, 0.0};
+//	adcScan_t adc;
+//	adc = get_adc_values();
 
-	// get 1 decimal
-	//uint8_t dec = (uint8_t)(vin * 10 - ((uint8_t)vin * 10)); // 152 - 150 = 2
-	//printf("[AD# %d] Vin= %i.%i V\r\n", (uint8_t)adcReading,(uint8_t)vin, (uint8_t)(vin * 10 - ((uint8_t)vin * 10)) );
-	return voltage;
-}
+//	// take an average of samples
+//	for(uint8_t i = 0; i<samples; i++){
+//		HAL_ADC_Start(&hadc1);
+//		HAL_ADC_PollForConversion(&hadc1, 10);
+//		voltage.adcReading += HAL_ADC_GetValue(&hadc1);
+//		HAL_ADC_Stop(&hadc1);
+//		HAL_Delay(1);
+//	}
+//	voltage.adcReading = voltage.adcReading/samples;
+//	voltage.realValue = voltage.adcReading * 0.0083 + 0.3963; // 15.23 store coef. in eeprom
+
+//	return voltage;
+//}
 
 
 
@@ -1045,31 +1064,29 @@ void motor_init(void){
 }
 
 void drive_motor(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t motorDirection, uint32_t runTime ){
-	uint32_t timeStart, timeNow, adcReading = 0;
-	uint16_t adcBuffer[ADC_BUFFER_SAMPLES] = {'\0'}; // store 3 ADC measurements in DMA mode: [Vin0,Im0,TempInt0,Vin1,Im1,...]
-	uint32_t rawCurrent = 0, rawVoltage = 0, rawTemperature = 0;
-	float current = 0, voltage = 0, temperature = 0;
-	uint8_t current_dec = 0, voltage_dec = 0, temperature_dec = 0; // display 2 decimal values
+	uint32_t timeStart, timeNow;
+//	uint16_t adcBuffer[ADC_BUFFER_SAMPLES] = {'\0'}; // store 3 ADC measurements in DMA mode: [Vin0,Im0,TempInt0,Vin1,Im1,...]
+//	uint32_t rawCurrent = 0, rawVoltage = 0, rawTemperature = 0;
+//	float current = 0, voltage = 0, temperature = 0;
+//	uint8_t current_dec = 0, voltage_dec = 0, temperature_dec = 0; // display 2 decimal values
 //	const float AVG_SLOPE_avg = 4.3, AVG_SLOPE_min = 4.0, AVG_SLOPE_max = 4.6; // average slope [mV/C]
 //	const float V25_avg = 1430, V25_min = 1340, V25_max = 1520 ; // Voltage at 25 degrees [mV]
-	const float AVG_SLOPE_avg = 4.3, V25_avg = 1430;
+//	const float AVG_SLOPE_avg = 4.3, V25_avg = 1430;
 	uint16_t adcSampleCount = 0;
-//	char adcmsg[50];
+	adcScan_t adcReading;
 
 	// Initialize PWM
-	// HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_3 ); // Start STEP signal >> counter to toggle every 20/1000 sec = 50hz
 	HAL_GPIO_WritePin(motorPort, motorPin, RESET); // make sure driver pin is disabled
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3); // initialize PWM pulses for DRV8826
-	//HAL_Delay(10); // wait for the motor to stop
+
 	HAL_GPIO_WritePin(DIR_GPIO_Port,DIR_Pin, motorDirection); // set motor direction
 	HAL_GPIO_WritePin(motorPort, motorPin, SET); // enable driver to run motor
 
 	timeStart = HAL_GetTick(); // initial timer count using SysTick timer (32 bit variable uwTick incremented every 1 ms, MAX = 50 days)
 
 	// get 1 current, voltage, temp reading every 500 ms using TIM2 interrupts
-	//HAL_TIM_Base_Start_IT(&htim4); // generates 1 interrupt every 500 ms
-	//HAL_ADC_Start_DMA(&hadc1, adcBuffer, 3); // take first sample at motor startup
 	HAL_TIM_PWM_Start_IT(&htim4, TIM_CHANNEL_4); // trigger adc conversions in DMA mode every x ms
+	printf("\r\n");
 
 	while(1){
 		// track motor runtime and break loop after desired time elapsed
@@ -1083,97 +1100,115 @@ void drive_motor(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t motorDi
 		if(active == rxStatus){ // set to active with UART RX interrupt
 			rxStatus = idle;
 			if(rxChar == '@'){
-				printf("Motor Stopped by user!\r\n");
+				printf("\r\n ** Motor Stopped by user! **\r\n");
 				break;
 			}
 		}
-
-		// if adc buffer not full, start dma and take 3 samples of each channel
-//		if( adcComplete == 0 ){
-//			HAL_ADC_Start_DMA(&hadc1, (uint32_t *) adcBuffer, 9);
-//		}
-		// when timer 2 interrupt sets adcTimerTrigger, start an ADC conversion in DMA mode
-//		if(adcTimerTrigger == 1){
-//			adcTimerTrigger = 0;
-//			HAL_ADC_Start_DMA(&hadc1, adcBuffer, ADC_BUFFER_SAMPLES); // start conversion scan
-//		}
-
-		// when timer 4 sets the flag, take samples, average and print
 		if(adcTimerTrigger == 1){
-			// reset flag
 			adcTimerTrigger = 0;
-			// Sample ADC scan (3 channels)
-			for(uint16_t j = 0; j < ADC_BUFFER_SAMPLES/3; j++){
-				HAL_ADC_Start_DMA(&hadc1, adcBuffer, ADC_BUFFER_SAMPLES);
-			}
-
-			// reset accumulators
-			rawCurrent = 0;
-			rawVoltage = 0;
-			rawTemperature = 0;
-			// average
-			for(uint16_t i = 0; i < ADC_BUFFER_SAMPLES; i=i+3){
-				rawVoltage += adcBuffer[i];
-				rawCurrent += adcBuffer[i+1];
-				rawTemperature += adcBuffer[i+2];
-			}
-			// calculate averages and real values
-			// voltage
-			rawVoltage = (uint32_t) ((float) rawVoltage) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts, divide by 3 num of buffer slots since each scan has 3 readings
-			voltage = (float) rawVoltage * 0.0083 + 0.3963; // calibration coeff should be taken from eeprom
-			voltage_dec = (uint8_t)(voltage * 10 - ((uint8_t)voltage * 10)); // ex. 15.3 = 15 . (153 - 150)
-			// current
-			rawCurrent = (uint32_t) ((float) rawCurrent) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts
-			current =  (float) rawCurrent * 0.163 + 7.3581; // mA - opAmp G = 50, Rsense = 0.10 ohm
-			current_dec = (uint8_t)(current * 10 - ((uint8_t)current * 10));
-			// internal temperature
-			rawTemperature = (uint32_t) ((float) rawTemperature) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts
-			temperature = ( (V25_avg - (rawTemperature * (3300.0/4096.0) ) )  / AVG_SLOPE_avg) + 25.0 ;
-			temperature_dec = (uint8_t)(temperature * 10 - ((uint8_t)temperature * 10));
-
+			adcReading = get_adc_values();
 			// print
-			printf("<%i> CURRENT[AD# %d]: %i.%i mA | VOLTAGE_IN[AD# %i]: %i.%i V | INT TEMP[AD# %i]: %i.%i C\r\n"
-					, (int)adcSampleCount, rawCurrent, (int)current, (int)current_dec, rawVoltage, (int)voltage, (int)voltage_dec, rawTemperature, (int)temperature, (int)temperature_dec);
+			printf("<%02i> Current [AD# %d]: %i.%i mA | Voltage [AD# %i]: %i.%i V | Temperature [AD# %i]: %i.%i C\r\n", (int)adcSampleCount,
+					 	 (int)adcReading.current.rawValue, (int)adcReading.current.realValue, get_decimal(adcReading.current.realValue, 1),
+						 (int)adcReading.voltage.rawValue, (int)adcReading.voltage.realValue, get_decimal(adcReading.voltage.realValue, 1),
+						 (int)adcReading.temperature.rawValue, (int)adcReading.voltage.realValue, get_decimal(adcReading.temperature.realValue, 1));
 
-			// increase sample counter
 			adcSampleCount++;
-			// re-enable ADC conversions
-			//HAL_ADC_Start_DMA(&hadc1, (uint32_t *) adcBuffer, 9);
 		}
 
+		// when timer 4 sets the flag, take samples, average and print
+//		if(adcTimerTrigger == 1){
+//			// reset flag
+//			adcTimerTrigger = 0;
+//			// Sample ADC scan (3 channels)
+//			for(uint16_t j = 0; j < ADC_BUFFER_SAMPLES/3; j++){
+//				HAL_ADC_Start_DMA(&hadc1, adcBuffer, ADC_BUFFER_SAMPLES);
+//			}
+//			// reset accumulators
+//			rawCurrent = 0;
+//			rawVoltage = 0;
+//			rawTemperature = 0;
+//			// average
+//			for(uint16_t i = 0; i < ADC_BUFFER_SAMPLES; i=i+3){
+//				rawVoltage += adcBuffer[i];
+//				rawCurrent += adcBuffer[i+1];
+//				rawTemperature += adcBuffer[i+2];
+//			}
+//			// calculate averages and real values
+//			// voltage
+//			rawVoltage = (uint32_t) ((float) rawVoltage) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts, divide by 3 num of buffer slots since each scan has 3 readings
+//			voltage = (float) rawVoltage * 0.0083 + 0.3963; // calibration coeff should be taken from eeprom
+//			voltage_dec = (uint8_t)(voltage * 10 - ((uint8_t)voltage * 10)); // ex. 15.3 = 15 . (153 - 150)
+//			// current
+//			rawCurrent = (uint32_t) ((float) rawCurrent) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts
+//			current =  (float) rawCurrent * 0.163 + 7.3581; // mA - opAmp G = 50, Rsense = 0.10 ohm
+//			current_dec = (uint8_t)(current * 10 - ((uint8_t)current * 10));
+//			// internal temperature
+//			rawTemperature = (uint32_t) ((float) rawTemperature) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts
+//			temperature = ( (V25_avg - (rawTemperature * (3300.0/4096.0) ) )  / AVG_SLOPE_avg) + 25.0 ;
+//			temperature_dec = (uint8_t)(temperature * 10 - ((uint8_t)temperature * 10));
+//
+//			// print
+//			printf("<%i> CURRENT[AD# %d]: %i.%i mA | VOLTAGE_IN[AD# %i]: %i.%i V | INT_TEMP[AD# %i]: %i.%i C\r\n"
+//					, (int)adcSampleCount, rawCurrent, (int)current, (int)current_dec, rawVoltage, (int)voltage, (int)voltage_dec, rawTemperature, (int)temperature, (int)temperature_dec);
+//			// increase sample counter
+//			adcSampleCount++;
+//		}
 	}
 
-
 	HAL_GPIO_WritePin(motorPort, motorPin, RESET); // disable motor driver
-	//HAL_TIM_Base_Stop_IT(&htim4); // stop timer interrupts for ADC conversions
 	HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_3); // stop PWM signal to step the motor
-
-	HAL_ADC_Stop_DMA(&hadc1); // stop ADC conversion if there was one triggered before exiting the while(1)
+	//HAL_ADC_Stop_DMA(&hadc1); // stop ADC conversion if there was one triggered before exiting the while(1)
 	HAL_TIM_PWM_Stop_IT(&htim4, TIM_CHANNEL_4); // stop timer triggering adc conversions
-
-	// old
-//	for (uint8_t ci = 1; ci < 20; ci++){
-//		adcReading = 0;
-//		for(uint8_t cj = 0; cj<100; cj++){
-//			HAL_ADC_Start(&hadc2);
-//			HAL_ADC_PollForConversion(&hadc2, 100);
-//			adcReading += HAL_ADC_GetValue(&hadc2);
-//			HAL_ADC_Stop(&hadc2);
-//			HAL_Delay(1);
-//		}
-//		adcReading = adcReading/100;
-//		motor_i = (uint16_t) (adcReading * 0.163 + 7.3581); // mA - opAmp G = 50, Rsense = 0.10 ohm
-//
-//		sprintf(adcmsg, "[AD# %d] Im_%d = %d mA\r\n", (int)adcReading, ci ,(int) motor_i);
-//		HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
-//		HAL_Delay(500);
-//		if((HAL_GetTick() - runStart) > runtime) break;
-//	}
-//	HAL_GPIO_WritePin(motorPort, motorPin, RESET); // disable driver
-//	HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_3 );
-
 }
 
+
+adcScan_t get_adc_values(void){
+	//	const float AVG_SLOPE_avg = 4.3, AVG_SLOPE_min = 4.0, AVG_SLOPE_max = 4.6; // average slope [mV/C]
+	//	const float V25_avg = 1430, V25_min = 1340, V25_max = 1520 ; // Voltage at 25 degrees [mV]
+	const float AVG_SLOPE_avg = 4.3, V25_avg = 1430;
+	const float VOLT_SLOPE = 0.0083, VOLT_OFFSET = 0.3963;
+	const float AMP_SLOPE = 0.163, AMP_OFFSET = 7.3581;
+	uint16_t adcBuffer[ADC_BUFFER_SAMPLES] = {'\0'}; // store 3 ADC measurements in DMA mode: [Vin0,Im0,TempInt0,Vin1,Im1,...]
+	adcScan_t adc = {.current = {0,0}, .voltage = {0,0}, .temperature = {0,0} };
+
+	// Sample ADC scan and fill the DMA buffer (3 channels: AIN10, AIN11, TEMPINT)
+	for(uint16_t j = 0; j < ADC_BUFFER_SAMPLES/3; j++){
+		HAL_ADC_Start_DMA(&hadc1, adcBuffer, ADC_BUFFER_SAMPLES);
+	}
+	HAL_ADC_Stop_DMA(&hadc1); // stop ADC conversions
+	// average
+	for(uint16_t i = 0; i < ADC_BUFFER_SAMPLES; i=i+3){
+		adc.voltage.rawValue += adcBuffer[i];
+		adc.current.rawValue += adcBuffer[i+1];
+		adc.temperature.rawValue += adcBuffer[i+2];
+	}
+	// calculate averages and real values
+	// voltage
+	adc.voltage.rawValue = (uint32_t) ((float) adc.voltage.rawValue) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts, divide by 3 num of buffer slots since each scan has 3 readings
+	adc.voltage.realValue = (float) adc.voltage.rawValue * VOLT_SLOPE + VOLT_OFFSET; // calibration coeff should be taken from eeprom
+	// current
+	adc.current.rawValue = (uint32_t) ((float) adc.current.rawValue) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts
+	adc.current.realValue =  (float) adc.current.rawValue * AMP_SLOPE + AMP_OFFSET; // mA - opAmp G = 50, Rsense = 0.10 ohm
+	// internal temperature
+	adc.temperature.rawValue = (uint32_t) ((float) adc.temperature.rawValue) / ((float) ADC_BUFFER_SAMPLES / 3.0); // ADC counts
+	adc.temperature.realValue = ( (V25_avg - (adc.temperature.rawValue * (3300.0/4096.0) ) )  / AVG_SLOPE_avg) + 25.0 ;
+
+	return adc;
+}
+
+/* Returns the decimal digits of a float as an integer
+ * Parameters: float number to retreive decimals, number of decimal digits */
+uint8_t get_decimal(float value, uint8_t digits){
+	uint8_t dec;
+	uint32_t exp = 1;
+
+	for(uint8_t i = 0; i < digits ; i++){
+		exp = exp * 10;
+	}
+	dec = (value - (int)value) * exp;
+	return dec;
+}
 
 
 /*************************************** EEPROM FUNCTIONS ***************************************/
@@ -1236,28 +1271,54 @@ void eeprom_print_map(void){
 		   "|[%03i]       AL_TYPE                   |\r\n"
 		   "|[%03i]       AL_SN                     |\r\n"
 		   "|[%03i]       AL_CONFIGED               |\r\n"
-		   "|[%03i-%03i]  M_RUNTIME                 |\r\n", AL_TUBECOUNT, AL_TYPE, AL_SN, AL_CONFIGED, M_RUNTIME,M_RUNTIME+3);
+		   "|[%03i-%03i]  M_RUNTIME                 |\r\n", AL_TUBECOUNT1B, AL_TYPE1B, AL_SN1B, AL_CONFIGED1B, M_RUNTIME4B,M_RUNTIME4B+3);
 	printf("|=======================================|\r\n");
 }
 
-/* Writes a 32-bit number to memory [0-65535]
- * or any 4-byte value (float) */
-void eeprom_write_uint32(uint8_t memoryStart, uint32_t data){
+/* Writes a 32-bit number to memory [0- 4,294,967,296]
+ * or any 4-byte value */
+void eeprom_write_uint32(uint8_t baseAddress, uint32_t data){
 	//[byte0][byte1][byte2][byte3] = 32 bit data
 	uint8_t dataByte[4] = {(data>>0), (data>>8), (data>>16), (data>>24)}; // break up each byte of the 32 bit number
 	for(uint8_t i = 0; i < 4; i++){
-		eeprom_write(memoryStart+i, dataByte[i]);
+		eeprom_write(baseAddress+i, dataByte[i]);
 	}
-
 }
 
-/* Reads a 32-bit number from memory [0-65535]*/
-uint32_t eeprom_read_uint32(uint8_t memoryStart){
+
+/* Write N bytes to eeprom
+ * Parameters: starting address on eeprom, number of bytes to write, pointer to data of any type */
+void eeprom_write_nbytes(uint8_t baseAddress, uint8_t bytes, void * pData){
+    uint8_t *ptr = 0;
+    //uint8_t data = 0;
+ 	for( uint8_t i = 0; i < bytes && i < 4; i++){
+		//uint8_t address = baseAddress+i;
+ 		ptr = pData+i; // cast to 1 byte before adding 1 to address
+		//data = *ptr;
+		eeprom_write(baseAddress+i, *ptr);
+	}
+}
+
+/* Read N bytes from eeprom
+ * Parameters: starting address on eeprom, number of bytes to read, pointer to store data of any type */
+void eeprom_read_nbytes(uint8_t baseAddress, uint8_t bytes, void * pData){
+	uint8_t *ptr = 0;
+ 	for( uint8_t i = 0; i < bytes && i < 4; i++){
+		//uint8_t address = baseAddress+i;
+ 		ptr = pData+i;
+		//data = *ptr;
+		*ptr = eeprom_read(baseAddress+i);
+	}
+}
+
+/* Reads a 32-bit number from memory [0- 4,294,967,296]
+ * or any 4-byte value  */
+uint32_t eeprom_read_uint32(uint8_t baseAddress){
 	//[byte0][byte1][byte2][byte3] = 32 bit data
 	uint8_t dataByte[4];
 	uint32_t number;
 	for(uint8_t i = 0; i < 4; i++){
-		dataByte[i] = eeprom_read(memoryStart+i);
+		dataByte[i] = eeprom_read(baseAddress+i);
 	}
 	number = (dataByte[3]<<24) + (dataByte[2]<<16) + (dataByte[1]<<8) + dataByte[0]; // put back the 32 bit number [byte0]+[byte1]+[byte2]+[byte3]
 
