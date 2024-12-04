@@ -98,8 +98,8 @@ typedef struct {
 #define MOTOR_SAMPLE_PERIOD_DEFAULT 500 // default time period to sample ADC current, voltage and internal temp
 #define MOTOR_SAMPLE_PERIOD_MAX 2000 // max allowed time in ms
 #define MOTOR_SAMPLE_PERIOD_MIN 100 // min allowed time in ms
-#define MOTOR_PWM_FREQ_DEFAULT 120 // Hz pwm step freq, if not configured in memory
-#define MOTOR_PWM_FREQ_MIN 10 // Hz lower limit for config
+#define MOTOR_PWM_FREQ_DEFAULT 200 // Hz pwm step freq, if not configured in memory
+#define MOTOR_PWM_FREQ_MIN 50 // Hz lower limit for config
 #define MOTOR_PWM_FREQ_MAX 500 // Hz upper limit for config
 #define MOTOR_WIRING_DEFAULT 0 // Use 1 or 0 based on motor wiring. This changes the direction to retract/extend pins
 // Relay parameters
@@ -171,6 +171,7 @@ void motor_set_runtime(void);
 void motor_set_sampling_period(void);
 void motor_set_wiring(void);
 void motor_set_pwm_freq(void);
+void update_timer(TIM_HandleTypeDef * htim, uint32_t period, uint8_t channel ,float dutyCycle);
 void motor_reset_stats(void);
 void motor_read_parameters(void);
 void menu_help_print(void);
@@ -573,14 +574,8 @@ void menu_main_process_input(char option){
         break;
     case 'P':
     	printf("menu_print_volt_temp()\r\n");
-    	menu_print_volt_temp();
     	// read input voltage and internal temp on autolauncher
-//    	adcScan_t adcReading = adc_get_values();
-//		printf("\r\nVOLTAGE[AD# %i]: %i.%i V | TEMPERATURE[AD# %i]: %i.%i C\r\n",
-//					 (int)adcReading.voltage.rawValue, (int)adcReading.voltage.realValue, get_decimal(adcReading.voltage.realValue, 1),
-//					 (int)adcReading.temperature.rawValue, (int)adcReading.temperature.realValue, get_decimal(adcReading.temperature.realValue, 1));
-    	//analog_t vin = voltage_read(VOLTAGE_READ_SAMPLES);
-    	//printf("[AD# %i] Vin= %i.%i V\r\n", vin.adcReading,(uint8_t)vin.realValue, (uint8_t)(vin.realValue * 10 - ((uint8_t)vin.realValue * 10)) );
+    	menu_print_volt_temp();
     	break;
     case 'N':
     	printf("multiplexer_set(MUX_GPS)\r\n");
@@ -684,56 +679,6 @@ void menu_config_process_input(char option){
             break;
         case 'G':
         	menu_clear_memory();
-//        	uint8_t memStart, memEnd;
-//        	eeprom_print_map(); // print memory map
-//        	// get the memory range to clear - start
-//        	uint8_t validMemory = 0; // valid memory value flag
-//			char mem[3]; // buffer to store digits
-//			char mStartPrompt[] = "\r\nEnter 3 digit START memory address [000-127]: ";
-//			char mEndPrompt[] = "\r\nEnter 3 digit END memory address [000-127]: ";
-//			char memError[] = "\r\n* ERROR: enter valid numbers *\r\n";
-//			char memCheck[] = {'0','1','2','3','4','5','6','7','8','9'};
-//			// get start address
-//        	do{
-//				get_user_input(mStartPrompt, memError, 3, memCheck, mem);
-//				memStart = (uint8_t) ( (mem[0] - '0') * 100 + (mem[1] - '0') * 10 + (mem[2] - '0') ); // convert to number, subtract '0' (48 dec)
-//				if((memStart >= 0) && (memStart <= 127)){
-//					validMemory = 1;
-//				} else {
-//					printf("Memory out of range!\r\n");
-//				}
-//        	} while ( validMemory == 0 );
-//        	// get end address
-//        	validMemory = 0;
-//        	do{
-//				mem[0] = '\0', mem[1] = '\0' , mem[2] = '\0';
-//
-//				get_user_input(mEndPrompt, memError, 3, memCheck, mem);
-//				memEnd = (uint8_t)( (mem[0] - '0') * 100 + (mem[1] - '0') * 10 + (mem[2] - '0') ); // convert to number, subtract '0' (48 dec)
-//				if((memEnd >= 0) && (memEnd <= 127)){
-//					validMemory = 1;
-//				} else {
-//					printf("Memory out of range!\r\n");
-//				}
-//        	} while ( validMemory == 0 );
-//        	printf("%i blocks cleared\r\n", eeprom_clear(memStart, memEnd));
-//        	// update variables with new stored values
-////    		launcher.tubeCount = eeprom_read(AL_TUBECOUNT1B);
-////    		launcher.type = eeprom_read(AL_TYPE1B);
-////    		launcher.serialNumber = eeprom_read(AL_SN1B);
-////    		launcher.configured = eeprom_read(AL_CONFIGED1B);
-////    		motor.runTime = eeprom_read_uint32(M_RUNTIME4B);
-//
-//        	eeprom_read_nbytes(AL_TUBECOUNT1B, sizeof(alMemory.tubeCount), &alMemory.tubeCount);
-//        	eeprom_read_nbytes(AL_TYPE1B, sizeof(alMemory.type), &alMemory.type);
-//        	eeprom_read_nbytes(AL_SN1B, sizeof(alMemory.serialNumber), &alMemory.serialNumber);
-//        	eeprom_read_nbytes(AL_CONFIGED1B, sizeof(alMemory.configured), &alMemory.configured);
-//        	eeprom_read_nbytes(M_RUNTIME2B, sizeof(mtMemory.runTime), &mtMemory.runTime);
-//        	eeprom_read_nbytes(M_SAMPLEPERIOD2B, sizeof(mtMemory.samplePeriod), &mtMemory.samplePeriod);
-////        	mtMemory = *(motor_t*) eeprom_read(DATA_MOTOR);
-////        	alMemory = *(launcher_t*) eeprom_read(DATA_LAUNCHER);
-//    		printf("\r\n<AL> Tubes: %c | Type: %c | Serial: %i <M> Runtime: %i | Sample Period: %i\r\n", alMemory.tubeCount, alMemory.type, alMemory.serialNumber, mtMemory.runTime, mtMemory.samplePeriod);
-
         	break;
         case 'H':
         	motor_read_stats();
@@ -764,9 +709,7 @@ void menu_config_process_input(char option){
             break;
     }
     printf("\r\n> ");
-
 }
-
 
 
 
@@ -791,7 +734,6 @@ void menu_config_tubes_type_serial(void){
     } else {
     	launcher.type = '0'; // if not 8 tubes, reset type to unknown
     }
-    //launcher.serialNumber = 55;
     printf("Current serial number: %c\r\n", launcher.serialNumber);
 	char serial[2];
 	char serialPrompt[] = "Enter a two-digit Autolauncher serial number [00-99]: ";
@@ -804,25 +746,20 @@ void menu_config_tubes_type_serial(void){
 
     // store parameters in eeprom
     eeprom_write_nbytes(AL_TUBECOUNT1B, sizeof(launcher.tubeCount), &launcher.tubeCount);
-//            eeprom_write(AL_TUBECOUNT1B, launcher.tubeCount);
     eeprom_write_nbytes(AL_TYPE1B, sizeof(launcher.type), &launcher.type);
-//            eeprom_write(AL_TYPE1B, launcher.type);
     eeprom_write_nbytes(AL_SN1B, sizeof(launcher.serialNumber), &launcher.serialNumber);
-//            eeprom_write(AL_SN1B, launcher.serialNumber);
     eeprom_write_nbytes(AL_CONFIGED1B, sizeof(launcher.configured), &launcher.configured);
-//            eeprom_write(AL_CONFIGED1B, eeprom.configured);
     printf("Settings saved!");
-//            printf("\r\nNew autolauncher configuration: Tubes: %c | Type: %c | Serial: %i | configed: %c\r\n", eeprom_read(AL_TUBECOUNT1B), eeprom_read(AL_TYPE1B), eeprom_read(AL_SN1B), eeprom_read(AL_CONFIGED1B));
-
     // test eeprom memory
     eeprom_read_nbytes(AL_TUBECOUNT1B, sizeof(launcher.tubeCount), &launcher.tubeCount);
     eeprom_read_nbytes(AL_TYPE1B, sizeof(launcher.type), &launcher.type);
     eeprom_read_nbytes(AL_SN1B, sizeof(launcher.serialNumber), &launcher.serialNumber);
     eeprom_read_nbytes(AL_CONFIGED1B, sizeof(launcher.configured), &launcher.configured);
-
+    // print stored values
     printf("\r\nStored autolauncher configuration: Tubes: %c | Type: %c | Serial: %i | Configured: %c\r\n",
     		launcher.tubeCount, launcher.type, launcher.serialNumber, launcher.configured);
 }
+
 
 void menu_clear_memory(void){
 	uint8_t memStart, memEnd;
@@ -831,8 +768,8 @@ void menu_clear_memory(void){
 	eeprom_print_memory_map();
 	// get the memory range to clear - start
 	char mem[3]; // buffer to store digits
-	char mStartPrompt[] = "\r\nEnter 3 digit START memory address [000-127]: ";
-	char mEndPrompt[] = "\r\nEnter 3 digit END memory address [000-127]: ";
+	char mStartPrompt[] = "\r\n>Enter 3 digit START memory address [000-127]: ";
+	char mEndPrompt[] = "\r\n>Enter 3 digit END memory address [000-127]: ";
 	char memError[] = "\r\n* ERROR: enter valid numbers *\r\n";
 	char memCheck[] = {'0','1','2','3','4','5','6','7','8','9'};
 	// get start address
@@ -842,7 +779,7 @@ void menu_clear_memory(void){
 		if((memStart >= 0) && (memStart <= 127)){
 			validMemory = 1;
 		} else {
-			printf("Memory out of range!\r\n");
+			printf("\r\n** Memory out of range! **\r\n");
 		}
 	} while ( validMemory == 0 );
 	// get end address
@@ -855,16 +792,11 @@ void menu_clear_memory(void){
 		if((memEnd >= 0) && (memEnd <= 127)){
 			validMemory = 1;
 		} else {
-			printf("Memory out of range!\r\n");
+			printf("\r\n** Memory out of range! **\r\n");
 		}
 	} while ( validMemory == 0 );
-	printf("> %i blocks cleared!\r\n", eeprom_clear(memStart, memEnd));
+	printf("> %i block/s cleared!\r\n", eeprom_clear(memStart, memEnd));
 	// update variables with new stored values
-//    		launcher.tubeCount = eeprom_read(AL_TUBECOUNT1B);
-//    		launcher.type = eeprom_read(AL_TYPE1B);
-//    		launcher.serialNumber = eeprom_read(AL_SN1B);
-//    		launcher.configured = eeprom_read(AL_CONFIGED1B);
-//    		motor.runTime = eeprom_read_uint32(M_RUNTIME4B);
 	// read launcher config
 	eeprom_read_nbytes(AL_TUBECOUNT1B, sizeof(launcher.tubeCount), &launcher.tubeCount);
 	eeprom_read_nbytes(AL_TYPE1B, sizeof(launcher.type), &launcher.type);
@@ -875,15 +807,12 @@ void menu_clear_memory(void){
 	eeprom_read_nbytes(M_PWM_FREQ2B, sizeof(motor.pwmFreq), &motor.pwmFreq);
 	eeprom_read_nbytes(M_SAMPLEPERIOD2B, sizeof(motor.samplePeriod), &motor.samplePeriod);
 	eeprom_read_nbytes(M_WIRING1B, sizeof(motor.wiring), &motor.wiring);
-//        	mtMemory = *(motor_t*) eeprom_read(DATA_MOTOR);
-//        	alMemory = *(launcher_t*) eeprom_read(DATA_LAUNCHER);
-
+	// print new values
 	printf("\r\n<EEPROM>\r\n");
 	printf("<AL> Tubes: %c | Type: %c | Serial: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
 	printf("<MOTOR> Runtime: %i ms | PWM Frequency: %i Hz | Sample Period: %i ms | Wiring: %i\r\n",
 			(int)motor.runTime, (int)motor.pwmFreq, (int)motor.samplePeriod, (int)motor.wiring);
 	motor_read_stats();
-
 }
 
 
@@ -920,10 +849,11 @@ void motor_read_stats(void){
 
 
 void motor_set_runtime(void){
-	printf("Current runtime: %i\r\n", motor.runTime);
+	printf("\r\n>Current runtime: %i ms [default=%i]\r\n", motor.runTime, MOTOR_RUNTIME_DEFAULT);
 	char runtime[5];
-	char runtimePrompt[] = "Enter motor runtime (5-digit number) in milliseconds [02000-15000]: ";
-	char runtimeError[] = "\r\nEnter only numbers!\r\n";
+	char runtimePrompt[100];
+	sprintf(runtimePrompt, ">Enter motor runtime (5-digit number) in milliseconds [%05i-%05i]: ", MOTOR_RUNTIME_MIN, MOTOR_RUNTIME_MAX);
+	char runtimeError[] = "\r\n** Enter only numbers! **\r\n";
 	char runtimeCheck[] = {'0','1','2','3','4','5','6','7','8','9'};
 	uint8_t rtFlag;
 	do{
@@ -933,28 +863,27 @@ void motor_set_runtime(void){
 		if((rt >= MOTOR_RUNTIME_MIN) && (rt <= MOTOR_RUNTIME_MAX)){
 			motor.runTime = (uint16_t) rt;
 		} else {
-			printf("\r\nValue out of range!\r\n");
+			printf("\r\n** Value out of range! **\r\n");
 			rtFlag = 1;
 		}
 
 	} while(rtFlag);
 	// Print all inputs
-	printf("Motor Runtime: %i ms\r\n", (int)motor.runTime);
+	printf(">Motor Runtime: %i ms\r\n", (int)motor.runTime);
 	// store in eeprom
 	eeprom_write_nbytes(M_RUNTIME2B, sizeof(motor.runTime), &motor.runTime);
-//    		eeprom_write_uint32(M_RUNTIME4B, motor.runTime);
 	// test memory
 	eeprom_read_nbytes(M_RUNTIME2B, sizeof(motor.runTime), &motor.runTime);
-//    		mtMemory = *(motor_t*) eeprom_read(DATA_MOTOR);
-	printf("Setting saved! Runtime: %i\r\n\r\n", (int)motor.runTime);
-
+	printf(">Setting saved! Runtime: %i\r\n\r\n", (int)motor.runTime);
 }
 
+
 void motor_set_sampling_period(void){
-	printf("Current ADC sampling period: %i\r\n", motor.samplePeriod);
+	printf("\r\n>Current ADC sampling period: %i ms [default=%i]\r\n", motor.samplePeriod, MOTOR_SAMPLE_PERIOD_DEFAULT);
 	char sPeriod[4];
-	char sPeriodPrompt[] = "Enter ADC sampling time (4-digit number) in milliseconds [0100-2000]: ";
-	char sPeriodError[] = "\r\nEnter only numbers!\r\n";
+	char sPeriodPrompt[100];
+	sprintf(sPeriodPrompt, ">Enter ADC sampling time (4-digit number) in milliseconds [%04i-%04i]: ", MOTOR_SAMPLE_PERIOD_MIN, MOTOR_SAMPLE_PERIOD_MAX);
+	char sPeriodError[] = "\r\n** Enter only numbers! **\r\n";
 	char sPeriodCheck[] = {'0','1','2','3','4','5','6','7','8','9'};
 	uint8_t spFlag;
 	do{
@@ -964,39 +893,132 @@ void motor_set_sampling_period(void){
 		if(( sp >= MOTOR_SAMPLE_PERIOD_MIN) && (sp <= MOTOR_SAMPLE_PERIOD_MAX) && sp < motor.runTime){
 			motor.samplePeriod = (uint16_t) sp;
 		} else {
-			printf("\r\nValue out of range or greater than runtime!\r\n");
+			printf("\r\n** Value out of range or greater than runtime! **\r\n");
 			spFlag = 1;
 		}
 	} while(spFlag);
 	// Print all inputs
-	printf("Motor ADC Sample Period: %i\r\n", (int)motor.samplePeriod);
+	printf(">Motor ADC Sample Period: %i ms\r\n", (int)motor.samplePeriod);
 	// store in eeprom
-
 	eeprom_write_nbytes(M_SAMPLEPERIOD2B, sizeof(motor.samplePeriod), &motor.samplePeriod);
-//    		eeprom_write_uint32(M_RUNTIME4B, motor.runTime);
 	// test memory
 	eeprom_read_nbytes(M_SAMPLEPERIOD2B, sizeof(motor.samplePeriod), &motor.samplePeriod);
-//    		mtMemory = *(motor_t*) eeprom_read(DATA_MOTOR);
-	printf("Setting saved! Sample Period: %i\r\n\r\n", (int)motor.samplePeriod);
-	// update timer registers
-
-
+	printf(">Setting saved! Sample Period: %i\r\n\r\n", (int)motor.samplePeriod);
+	// verify value read is ok
+	if( !(motor.samplePeriod >= MOTOR_SAMPLE_PERIOD_MIN && motor.samplePeriod <= MOTOR_SAMPLE_PERIOD_MAX)){
+		motor.samplePeriod = MOTOR_SAMPLE_PERIOD_DEFAULT;
+	}
+	// update timer PWM registers
+	update_timer(&htim4, motor.samplePeriod, 4, 0.5);
+	// update timer registers with new adc period (timer 4, channel 4 pwm). See TIM_TypeDef definition
+	// Prescaler is 8000, so  TIMER CLK = 8 MHz/8000 -> PWM f = 1 kHz -> 1 cycle/1 ms -> 1 rising edge / 1 ms
+//	TIM4->ARR = (uint32_t) motor.samplePeriod-1; // ARR Auto Reload Register, counter Period: 500-1 (500 ms)
+//	TIM4->CCR4 = (uint32_t) ((motor.samplePeriod)/2) - 1; // CCR4 Capture Compare Register, channel 4 Pulse: 250-1 (PWM mode 1 -> 0-250 off, 250-499 on) 50% Duty cycle
 }
 
+
+void motor_set_pwm_freq(void){
+	printf("\r\n>Current PWM frequency: %i Hz [default=%i]\r\n", motor.pwmFreq, MOTOR_PWM_FREQ_DEFAULT);
+	char pwmf[4];
+	char pwmfPrompt[100];
+	sprintf(pwmfPrompt, ">Enter PWM frequency (4-digit number) in Hz [%04i-%04i]: ", MOTOR_PWM_FREQ_MIN, MOTOR_PWM_FREQ_MAX);
+	char pwmfError[] = "\r\n** Enter only numbers! **\r\n";
+	char pwmfCheck[] = {'0','1','2','3','4','5','6','7','8','9'};
+	uint8_t pwmfFlag;
+	do{
+		pwmfFlag = 0;
+		get_user_input(pwmfPrompt, pwmfError, 4, pwmfCheck, pwmf);
+		uint32_t f = ( (pwmf[0] - '0') * 1000 + (pwmf[1] - '0') * 100 + (pwmf[2] - '0') * 10 + (pwmf[3] - '0') );
+		if(( f >= MOTOR_PWM_FREQ_MIN) && (f <= MOTOR_PWM_FREQ_MAX)){
+			motor.pwmFreq = (uint16_t) f;
+		} else {
+			printf("\r\n** Value out of range! **\r\n");
+			pwmfFlag = 1;
+		}
+	} while(pwmfFlag);
+	// Print all inputs
+	printf(">Motor PWM frequency: %i Hz\r\n", (int)motor.pwmFreq);
+	// store in eeprom
+	eeprom_write_nbytes(M_PWM_FREQ2B, sizeof(motor.pwmFreq), &motor.pwmFreq);
+	// test memory
+	eeprom_read_nbytes(M_PWM_FREQ2B, sizeof(motor.pwmFreq), &motor.pwmFreq);
+	printf(">Setting saved! PWM Freq: %i\r\n\r\n", (int)motor.pwmFreq);
+	// verify value read is ok
+	if( !(motor.pwmFreq >= MOTOR_PWM_FREQ_MIN && motor.pwmFreq <= MOTOR_PWM_FREQ_MAX)){
+		motor.pwmFreq = MOTOR_PWM_FREQ_DEFAULT;
+	}
+	// get period from frequency
+	uint32_t pwmPeriod = 1E6/motor.pwmFreq; // PWM period in us -> 1E6/200 Hz = 5000 us
+	// update timer PWM registers
+	update_timer(&htim3, pwmPeriod, 3, 0.5);
+	// update timer registers with new motor step PWM period (timer 3, channel 3 pwm output). See TIM_TypeDef definition
+	// Prescaler is 8, so  TIMER CLK = 8 MHz/8-> PWM f = 1 MHz  -> 1 cycle/1 us -> 1 rising edge / 1 us
+//	TIM3->ARR = (uint32_t) pwmPeriod-1; // ARR Auto Reload Register, counter Period: 5000-1 (5 ms)
+//	TIM3->CCR3 = (uint32_t) (pwmPeriod/2) - 1; // CCR3 Capture Compare Register, channel 3 Pulse: 2500-1 (PWM mode 1 -> 0-2500 off, 2500-4999 on) 50% Duty cycle
+}
+
+void update_timer(TIM_HandleTypeDef * htim, uint32_t period, uint8_t channel ,float dutyCycle){
+	// update timer registers with period and duty cycle See TIM_TypeDef definition
+	// Example: Prescaler is 8, so  TIMER CLK = 8 MHz/8-> PWM f = 1 MHz  -> 1 cycle/1 us -> 1 rising edge / 1 us
+	// ARR Auto Reload Register, counter Period: 5000-1 (5 ms)
+	// CCR3 Capture Compare Register, channel 3 Pulse: 2500-1 (PWM mode 1 -> 0-2500 off, 2500-4999 on) 50% Duty cycle
+	uint32_t pulse = (uint32_t) ((float)period * dutyCycle);
+	htim->Instance->ARR = (uint32_t) (period - 1);
+
+	switch (channel){
+	case 1:
+		htim->Instance->CCR1 = pulse - 1;
+		break;
+	case 2:
+		htim->Instance->CCR2 = pulse - 1;
+		break;
+	case 3:
+		htim->Instance->CCR3 = pulse - 1;
+		break;
+	case 4:
+		htim->Instance->CCR4 = pulse - 1;
+		break;
+	default:
+		break;
+	}
+}
 
 
 
 void motor_set_wiring(void){
-
+	printf("\r\n>Current motor wiring: %i [default=%i]\r\n", motor.wiring, MOTOR_WIRING_DEFAULT);
+	char mw[1];
+	char mwPrompt[] = ">Enter motor wiring code (1-digit number) [0-1]: ";
+	char mwError[] = "\r\n** Enter only numbers! **\r\n";
+	char mwCheck[] = {'0','1'};
+	uint8_t mwFlag;
+	do{
+		mwFlag = 0;
+		get_user_input(mwPrompt, mwError, 1, mwCheck, mw);
+		uint32_t w = (mw[0] - '0');
+		if( w == 1 || w == 0){
+			motor.wiring = (uint8_t) w;
+		} else {
+			printf("\r\n** Value out of range! **\r\n");
+			mwFlag = 1;
+		}
+	} while(mwFlag);
+	// Print all inputs
+	printf(">Motor wiring code: %i\r\n", (int)motor.wiring);
+	// store in eeprom
+	eeprom_write_nbytes(M_WIRING1B, sizeof(motor.wiring), &motor.wiring);
+	// test memory
+	eeprom_read_nbytes(M_WIRING1B, sizeof(motor.wiring), &motor.wiring);
+	printf(">Setting saved! Motor wiring: %i\r\n\r\n", (int)motor.wiring);
 }
 
-void motor_set_pwm_freq(void){
-
-}
 
 void motor_reset_stats(void){
-
+	uint8_t slots = eeprom_clear(M_1COUNT2B, M_8MXAMP2B+2);
+	printf("\r\n>%i bytes cleared\r\n", slots);
+	motor_read_stats();
 }
+
 
 void motor_read_parameters(void){
 	// read motor parameters from eeprom
@@ -1007,24 +1029,29 @@ void motor_read_parameters(void){
 	eeprom_read_nbytes(M_WIRING1B, sizeof(tempMotor.wiring), &tempMotor.wiring);
 
 	// check values are within range or use defaults {flag = 'N'}
-	char rtFlag = 'Y', spFlag = 'Y', pfFlag = 'Y', wFlag = 'Y'; // using default values?
+	char rtFlag = 'D', spFlag = 'D', pfFlag = 'D', wFlag = 'D'; // using default values?
 	if(tempMotor.runTime >= MOTOR_RUNTIME_MIN && tempMotor.runTime <= MOTOR_RUNTIME_MAX){
 		motor.runTime = tempMotor.runTime;
-		rtFlag = 'N';
+		rtFlag = 'M';
 	}
 	if(tempMotor.samplePeriod >= MOTOR_SAMPLE_PERIOD_MIN && tempMotor.samplePeriod <= MOTOR_SAMPLE_PERIOD_MAX && tempMotor.samplePeriod <= motor.runTime){
 		motor.samplePeriod = tempMotor.samplePeriod;
-		spFlag = 'N';
+		spFlag = 'M';
 	}
 	if(tempMotor.pwmFreq >= MOTOR_PWM_FREQ_MIN && tempMotor.pwmFreq <= MOTOR_PWM_FREQ_MAX){
 		motor.pwmFreq = tempMotor.pwmFreq;
-		pfFlag = 'N';
+		pfFlag = 'M';
 	}
 	if(tempMotor.wiring == 0 || tempMotor.wiring == 1){
 		motor.wiring = tempMotor.wiring;
-		wFlag = 'N';
+		wFlag = 'M';
 	}
-	printf("\r\nDEFAULT VALUE?: {Y/N}\r\n<MOTOR> Runtime: %i ms {%c} | PWM Frequency: %i Hz {%c} | Sample Period: %i ms {%c} | Wiring: %i {%c} \r\n",
+	// update timer registers
+	uint32_t pwmPeriod = 1E6/motor.pwmFreq; // PWM period in us -> 1E6/200 Hz = 5000 us
+	update_timer(&htim3, pwmPeriod, 3, 0.5); // timer 3 motor PWM steps
+	update_timer(&htim4, motor.samplePeriod, 4, 0.5); // tiemr 4 ADC sampling period
+
+	printf("\r\n>Non-Volatile Memory {M} OR Default {D}\r\n<MOTOR> Runtime: %i ms {%c} | PWM Frequency: %i Hz {%c} | Sample Period: %i ms {%c} | Wiring: %i {%c} \r\n",
 			 (int)motor.runTime, rtFlag, (int)motor.pwmFreq, spFlag, (int)motor.samplePeriod, pfFlag,  (int)motor.wiring, wFlag);
 }
 
@@ -1129,81 +1156,22 @@ void print_inline(char * text){
 /* Initialize autolauncher parameters */
 void parameter_init(void){
 	// get parameters from eeprom or assign default values
-//	launcher.configured = eeprom_read(AL_CONFIGED1B);
 	eeprom_read_nbytes(AL_CONFIGED1B, sizeof(launcher.configured), &launcher.configured);
-//	launcher_t al = *(launcher_t*) eeprom_read(DATA_LAUNCHER);
-//	motor_t mt = *(motor_t*) eeprom_read(DATA_MOTOR);
 
 	if(launcher.configured == 'Y'){
 		printf("\r\n** AL configuration found in memory **\r\n");
 		eeprom_read_nbytes(AL_TUBECOUNT1B, sizeof(launcher.tubeCount), &launcher.tubeCount);
 		eeprom_read_nbytes(AL_TYPE1B, sizeof(launcher.type), &launcher.type);
 		eeprom_read_nbytes(AL_SN1B, sizeof(launcher.serialNumber), &launcher.serialNumber);
-//		launcher.tubeCount = eeprom_read(AL_TUBECOUNT1B);
-//		launcher.type = eeprom_read(AL_TYPE1B);
-//		launcher.serialNumber = eeprom_read(AL_SN1B);
-		// read motor runtime and assign a default value if out of range
-//		uint32_t rt = eeprom_read_uint32(M_RUNTIME4B);
 
 		printf("\r\n<AL> Tubes: %c | Type: %c | Serial: %03i <AL>\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
 	} else {
 		printf("\r\n** AL Configuration NOT found in memory **\r\n");
 	}
-
-//	// read motor parameters from eeprom
-//	motor_t tempMotor;
-//	eeprom_read_nbytes(M_RUNTIME2B, sizeof(tempMotor.runTime), &tempMotor.runTime);
-//	eeprom_read_nbytes(M_SAMPLEPERIOD2B, sizeof(tempMotor.samplePeriod), &tempMotor.samplePeriod);
-//	eeprom_read_nbytes(M_PWM_FREQ2B, sizeof(tempMotor.pwmFreq), &tempMotor.pwmFreq);
-//	eeprom_read_nbytes(M_WIRING1B, sizeof(tempMotor.wiring), &tempMotor.wiring);
-//
-//	// check values are within range or use defaults {flag = 'N'}
-//	uint8_t rtFlag = 'Y', spFlag = 'Y', pfFlag = 'Y', wFlag = 'Y'; // using default values?
-//	if(tempMotor.runTime >= MOTOR_RUNTIME_MIN && tempMotor.runTime <= MOTOR_RUNTIME_MAX){
-//		motor.runTime = tempMotor.runTime;
-//		rtFlag = 'N';
-//	}
-//	if(tempMotor.samplePeriod >= MOTOR_SAMPLE_PERIOD_MIN && tempMotor.samplePeriod <= MOTOR_SAMPLE_PERIOD_MAX){
-//		motor.samplePeriod = tempMotor.samplePeriod;
-//		spFlag = 'N';
-//	}
-//	if(tempMotor.pwmFreq >= MOTOR_PWM_FREQ_MIN && tempMotor.pwmFreq <= MOTOR_PWM_FREQ_MAX){
-//		motor.pwmFreq = tempMotor.pwmFreq;
-//		pfFlag = 'N';
-//	}
-//	if(tempMotor.wiring == 0 || tempMotor.wiring == 1){
-//		motor.wiring = tempMotor.wiring;
-//		wFlag = 'N';
-//	}
-//	printf("\r\nDEFAULT VALUE?: {Y/N}\r\n<MOTOR> Runtime: %i ms {%c} | PWM Frequency: %i {%c} | Sample Period: %i ms {%c} | Wiring: %i {%c} \r\n",
-//			rtFlag, (int)motor.runTime, spFlag, (int)motor.pwmFreq, pfFlag, (int)motor.samplePeriod, wFlag, (int)motor.wiring);
 	// read motor parameters from eeprom
 	motor_read_parameters();
 	// Read motor stats
 	motor_read_stats();
-//	// use count
-//	eeprom_read_nbytes(M_1COUNT2B, sizeof(motor.count[0]), &motor.count[0]);
-//	eeprom_read_nbytes(M_2COUNT2B, sizeof(motor.count[1]), &motor.count[1]);
-//	eeprom_read_nbytes(M_3COUNT2B, sizeof(motor.count[2]), &motor.count[2]);
-//	eeprom_read_nbytes(M_4COUNT2B, sizeof(motor.count[3]), &motor.count[3]);
-//	eeprom_read_nbytes(M_5COUNT2B, sizeof(motor.count[4]), &motor.count[4]);
-//	eeprom_read_nbytes(M_6COUNT2B, sizeof(motor.count[5]), &motor.count[5]);
-//	eeprom_read_nbytes(M_7COUNT2B, sizeof(motor.count[6]), &motor.count[6]);
-//	eeprom_read_nbytes(M_8COUNT2B, sizeof(motor.count[7]), &motor.count[7]);
-//	// max current logged
-//	eeprom_read_nbytes(M_1MXAMP2B, sizeof(motor.imax[0]), &motor.imax[0]);
-//	eeprom_read_nbytes(M_2MXAMP2B, sizeof(motor.imax[1]), &motor.imax[1]);
-//	eeprom_read_nbytes(M_3MXAMP2B, sizeof(motor.imax[2]), &motor.imax[2]);
-//	eeprom_read_nbytes(M_4MXAMP2B, sizeof(motor.imax[3]), &motor.imax[3]);
-//	eeprom_read_nbytes(M_5MXAMP2B, sizeof(motor.imax[4]), &motor.imax[4]);
-//	eeprom_read_nbytes(M_6MXAMP2B, sizeof(motor.imax[5]), &motor.imax[5]);
-//	eeprom_read_nbytes(M_7MXAMP2B, sizeof(motor.imax[6]), &motor.imax[6]);
-//	eeprom_read_nbytes(M_8MXAMP2B, sizeof(motor.imax[7]), &motor.imax[7]);
-//	// print stats
-//	printf("\r\n|             STEPPER MOTOR STATS             |\r\n");
-//	for(uint8_t i = 0; i < 8; i++){
-//		printf("| [M%i] IMAX= %03i mA, USE_COUNT= %05i |\r\n", i+1 ,(int)motor.imax[i], (int)motor.count[i]);
-//	}
 }
 
 /* UART Receive complete interrupt callback, set rxStatus flag for new char received
@@ -1245,27 +1213,6 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 void uartrx_interrupt_init(void){
 	HAL_UART_Receive_IT(&huart1, (uint8_t *) rxBuffer, 1); // enable UART receive interrupt, store received char in rxChar buffer
 }
-
-
-//
-//adcScan_t voltage_read(void){
-//	//analog_t voltage = {0, 0.0};
-//	adcScan_t adc;
-//	adc = get_adc_values();
-
-//	// take an average of samples
-//	for(uint8_t i = 0; i<samples; i++){
-//		HAL_ADC_Start(&hadc1);
-//		HAL_ADC_PollForConversion(&hadc1, 10);
-//		voltage.adcReading += HAL_ADC_GetValue(&hadc1);
-//		HAL_ADC_Stop(&hadc1);
-//		HAL_Delay(1);
-//	}
-//	voltage.adcReading = voltage.adcReading/samples;
-//	voltage.realValue = voltage.adcReading * 0.0083 + 0.3963; // 15.23 store coef. in eeprom
-
-//	return voltage;
-//}
 
 
 
@@ -1350,7 +1297,7 @@ void connect_xbt_pin(uint8_t xbtNum){
 			drive_relay(SSR_8_GPIO_Port, SSR_8_Pin, 1); // SET SSR8
 			break;
 		default:
-			printf("\r\n* ERROR: XBT %i relay not found *\r\n", xbtNum);
+			printf("\r\n** ERROR: XBT %i relay not found **\r\n", xbtNum);
 			break;
 		}
 		relayLock = reFree;
@@ -1461,7 +1408,7 @@ void motor_select(uint8_t xbtNum, motorDir_t dir){
 			imax = motor_drive(ENABLE_M8_GPIO_Port, ENABLE_M8_Pin, dir, rtime);
 			break;
 		default:
-			printf("\r\n* ERROR: XBT %i motor not found *\r\n", xbtNum);
+			printf("\r\n** ERROR: XBT %i motor not found **\r\n", xbtNum);
 			break;
 		}
 		// release motor lock
@@ -1540,7 +1487,7 @@ uint16_t motor_drive(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t mot
 		if(active == rxStatus){ // set to active with UART RX interrupt
 			rxStatus = idle;
 			if(rxChar == '@'){
-				printf("\r\n ** Motor Stopped by user! **\r\n");
+				printf("\r\n** Motor Stopped by user! **\r\n");
 				break;
 			}
 		}
@@ -1572,11 +1519,6 @@ uint16_t motor_drive(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t mot
 /*************************************** ADC CONTROL FUNCTIONS ***************************************/
 
 adcScan_t adc_get_values(void){
-	//	const float AVG_SLOPE_avg = 4.3, AVG_SLOPE_min = 4.0, AVG_SLOPE_max = 4.6; // average slope [mV/C]
-	//	const float V25_avg = 1430, V25_min = 1340, V25_max = 1520 ; // Voltage at 25 degrees [mV]
-//	const float AVG_SLOPE_avg = 4.3, V25_avg = 1430;
-//	const float VOLT_SLOPE = 0.0083, VOLT_OFFSET = 0.3963;
-//	const float AMP_SLOPE = 0.163, AMP_OFFSET = 7.3581;
 	uint16_t adcBuffer[ADC_BUFFER] = {'\0'}; // store 3 ADC measurements in DMA mode: [Vin0,Im0,TempInt0,Vin1,Im1,...]
 	uint32_t vAccum = 0, iAccum = 0, tAccum = 0;
 	adcScan_t adc = {.current = {0,0}, .voltage = {0,0}, .temperature = {0,0} };
@@ -1587,16 +1529,9 @@ adcScan_t adc_get_values(void){
 		vAccum += adcBuffer[0];
 		iAccum += adcBuffer[1];
 		tAccum += adcBuffer[2];
-//		HAL_Delay(1);
+//		HAL_Delay(1); // needed for debugging
 	}
-
 	HAL_ADC_Stop_DMA(&hadc1); // stop ADC conversions
-	// average
-//	for(uint16_t i = 0; i < ADC_BUFFER/3; i=i+3){
-//		vAccum += adcBuffer[i];
-//		iAccum += adcBuffer[i+1];
-//		tAccum += adcBuffer[i+2];
-//	}
 	// calculate averages and real values
 	// voltage
 	adc.voltage.rawValue = (uint16_t) ( vAccum / ADC_SAMPLES ); // ADC counts, divide by 3 num of buffer slots since each scan has 3 readings
@@ -1627,7 +1562,7 @@ void eeprom_write(uint8_t memoryAddress, uint8_t dataByte){
 		HAL_I2C_Master_Transmit(&hi2c1, EEPROM_BUS_ADDRESS , txBuff, 2, HAL_MAX_DELAY); // send word address, value
 		HAL_Delay(10); // wait for data to be written
 	} else {
-		printf("* ERROR: memory address %x out of range [0-%i] *\r\n", memoryAddress, eeprom.MAX_MEM_ADDRESS);
+		printf("** ERROR: memory address %x out of range [0-%i] **\r\n", memoryAddress, eeprom.MAX_MEM_ADDRESS);
 	}
 }
 
@@ -1643,7 +1578,7 @@ uint8_t eeprom_read(uint8_t memoryAddress){
 		HAL_I2C_Master_Receive(&hi2c1, EEPROM_BUS_ADDRESS, rxBuff, 1, HAL_MAX_DELAY); // send command to read 1 byte at current memory address pointer
 		HAL_Delay(10);
 	} else {
-		printf("* ERROR: memory address %x out of range [0-%i] *\r\n", memoryAddress, eeprom.MAX_MEM_ADDRESS);
+		printf("** ERROR: memory address %x out of range [0-%i] **\r\n", memoryAddress, eeprom.MAX_MEM_ADDRESS);
 	}
 	return ((uint8_t) rxBuff[0]);
 }
@@ -1658,7 +1593,7 @@ uint8_t eeprom_clear(uint8_t memoryStart, uint8_t memoryEnd){
 			eeprom_write(i, 0); // write 0 to corresponding byte
 		}
 	} else {
-		printf("* ERROR: memory out of range [0-%i] *\r\n", eeprom.MAX_MEM_ADDRESS);
+		printf("** ERROR: memory out of range [0-%i] **\r\n", eeprom.MAX_MEM_ADDRESS);
 	}
 	return (i-memoryStart);
 }
@@ -1671,47 +1606,38 @@ void eeprom_print_memory_map(void){
 	printf("|              MEMORY MAP                |\r\n");
 	printf("|========================================|\r\n");
 	// autolauncher aprameters
-	printf("| [%03i]        AL_TUBECOUNT               |\r\n", AL_TUBECOUNT1B);
-	printf("| [%03i]        AL_TYPE                    |\r\n", AL_TYPE1B);
-	printf("| [%03i]        AL_SN                      |\r\n", AL_SN1B);
-	printf("| [%03i]        AL_CONFIGED                |\r\n", AL_CONFIGED1B);
+	printf("| [%03i]        AL_TUBECOUNT              |\r\n", AL_TUBECOUNT1B);
+	printf("| [%03i]        AL_TYPE                   |\r\n", AL_TYPE1B);
+	printf("| [%03i]        AL_SN                     |\r\n", AL_SN1B);
+	printf("| [%03i]        AL_CONFIGED               |\r\n", AL_CONFIGED1B);
 	printf("|========================================|\r\n");
 	// motor parameters
-	printf("| [%03i-%03i]    M_RUNTIME             |\r\n", M_RUNTIME2B,M_RUNTIME2B+1);
-	printf("| [%03i-%03i]    M_PWM_FREQ            |\r\n", M_PWM_FREQ2B, M_PWM_FREQ2B+1);
-	printf("| [%03i-%03i]    M_SAMPLEPERIOD        |\r\n", M_SAMPLEPERIOD2B, M_SAMPLEPERIOD2B+1);
+	printf("| [%03i-%03i]    M_RUNTIME               |\r\n", M_RUNTIME2B,M_RUNTIME2B+1);
+	printf("| [%03i-%03i]    M_PWM_FREQ              |\r\n", M_PWM_FREQ2B, M_PWM_FREQ2B+1);
+	printf("| [%03i-%03i]    M_SAMPLEPERIOD          |\r\n", M_SAMPLEPERIOD2B, M_SAMPLEPERIOD2B+1);
+	printf("| [%03i-%03i]    M_WIRING1B              |\r\n", M_WIRING1B, M_WIRING1B+1);
 	printf("|========================================|\r\n");
 	// use count
-	printf("| [%03i-%03i]    M_1COUNT                |\r\n", M_1COUNT2B, M_1COUNT2B+1);
-	printf("| [%03i-%03i]    M_2COUNT                |\r\n", M_2COUNT2B, M_2COUNT2B+1);
-	printf("| [%03i-%03i]    M_3COUNT                |\r\n", M_3COUNT2B, M_3COUNT2B+1);
-	printf("| [%03i-%03i]    M_4COUNT                |\r\n", M_4COUNT2B, M_4COUNT2B+1);
-	printf("| [%03i-%03i]    M_5COUNT                |\r\n", M_5COUNT2B, M_5COUNT2B+1);
-	printf("| [%03i-%03i]    M_6COUNT                |\r\n", M_6COUNT2B, M_6COUNT2B+1);
-	printf("| [%03i-%03i]    M_7COUNT                |\r\n", M_7COUNT2B, M_7COUNT2B+1);
-	printf("| [%03i-%03i]    M_8COUNT                |\r\n", M_8COUNT2B, M_8COUNT2B+1);
+	printf("| [%03i-%03i]    M_1COUNT                  |\r\n", M_1COUNT2B, M_1COUNT2B+1);
+	printf("| [%03i-%03i]    M_2COUNT                  |\r\n", M_2COUNT2B, M_2COUNT2B+1);
+	printf("| [%03i-%03i]    M_3COUNT                  |\r\n", M_3COUNT2B, M_3COUNT2B+1);
+	printf("| [%03i-%03i]    M_4COUNT                  |\r\n", M_4COUNT2B, M_4COUNT2B+1);
+	printf("| [%03i-%03i]    M_5COUNT                  |\r\n", M_5COUNT2B, M_5COUNT2B+1);
+	printf("| [%03i-%03i]    M_6COUNT                  |\r\n", M_6COUNT2B, M_6COUNT2B+1);
+	printf("| [%03i-%03i]    M_7COUNT                  |\r\n", M_7COUNT2B, M_7COUNT2B+1);
+	printf("| [%03i-%03i]    M_8COUNT                  |\r\n", M_8COUNT2B, M_8COUNT2B+1);
 	printf("|========================================|\r\n");
 	// Max current
-	printf("| [%03i-%03i]    M_1MXAMP                |\r\n", M_1MXAMP2B, M_1MXAMP2B+1);
-	printf("| [%03i-%03i]    M_2MXAMP                |\r\n", M_2MXAMP2B, M_2MXAMP2B+1);
-	printf("| [%03i-%03i]    M_3MXAMP                |\r\n", M_3MXAMP2B, M_3MXAMP2B+1);
-	printf("| [%03i-%03i]    M_4MXAMP                |\r\n", M_4MXAMP2B, M_4MXAMP2B+1);
-	printf("| [%03i-%03i]    M_5MXAMP                |\r\n", M_5MXAMP2B, M_5MXAMP2B+1);
-	printf("| [%03i-%03i]    M_6MXAMP                |\r\n", M_6MXAMP2B, M_6MXAMP2B+1);
-	printf("| [%03i-%03i]    M_7MXAMP                |\r\n", M_7MXAMP2B, M_7MXAMP2B+1);
-	printf("| [%03i-%03i]    M_8MXAMP                |\r\n", M_8MXAMP2B, M_8MXAMP2B+1);
+	printf("| [%03i-%03i]    M_1MXAMP                  |\r\n", M_1MXAMP2B, M_1MXAMP2B+1);
+	printf("| [%03i-%03i]    M_2MXAMP                  |\r\n", M_2MXAMP2B, M_2MXAMP2B+1);
+	printf("| [%03i-%03i]    M_3MXAMP                  |\r\n", M_3MXAMP2B, M_3MXAMP2B+1);
+	printf("| [%03i-%03i]    M_4MXAMP                  |\r\n", M_4MXAMP2B, M_4MXAMP2B+1);
+	printf("| [%03i-%03i]    M_5MXAMP                  |\r\n", M_5MXAMP2B, M_5MXAMP2B+1);
+	printf("| [%03i-%03i]    M_6MXAMP                  |\r\n", M_6MXAMP2B, M_6MXAMP2B+1);
+	printf("| [%03i-%03i]    M_7MXAMP                  |\r\n", M_7MXAMP2B, M_7MXAMP2B+1);
+	printf("| [%03i-%03i]    M_8MXAMP                  |\r\n", M_8MXAMP2B, M_8MXAMP2B+1);
 	printf("|========================================|\r\n");
 }
-
-/* Writes a 32-bit number to memory [0- 4,294,967,296]
- * or any 4-byte value */
-//void eeprom_write_uint32(uint8_t baseAddress, uint32_t data){
-//	//[byte0][byte1][byte2][byte3] = 32 bit data
-//	uint8_t dataByte[4] = {(data>>0), (data>>8), (data>>16), (data>>24)}; // break up each byte of the 32 bit number
-//	for(uint8_t i = 0; i < 4; i++){
-//		eeprom_write(baseAddress+i, dataByte[i]);
-//	}
-//}
 
 
 /* Write N bytes to eeprom
@@ -1753,356 +1679,15 @@ void eeprom_read_nbytes(uint8_t baseAddress, uint8_t bytes, void * pData){
 //	return number;
 //}
 
-//void * eeprom_read_struct(module_t module) {
-//    void * ptr = NULL;
-//
-//    switch (module) {
-//    case DATA_MOTOR:
-//        motor_t *mt = malloc(sizeof(motor_t));
-//        if (mt == NULL) {
-//            // Handle allocation failure
-//            return NULL;
-//        }
-//        *mt = (motor_t){0, 0, {0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0}};
-//        ptr = mt;
-//        eeprom_read_nbytes(M_RUNTIME2B, sizeof(mt->runTime), &mt->runTime);
-//        eeprom_read_nbytes(M_SAMPLEPERIOD2B, sizeof(mt->samplePeriod), &mt->samplePeriod);
-//        break;
-//    case DATA_LAUNCHER:
-//        launcher_t *al = malloc(sizeof(launcher_t));
-//        if (al == NULL) {
-//            // Handle allocation failure
-//            return NULL;
-//        }
-//        *al = (launcher_t){0, '0', '0', 0, '0'};
-//        ptr = al;
-//        eeprom_read_nbytes(AL_TUBECOUNT1B, sizeof(al->tubeCount), &al->tubeCount);
-//        eeprom_read_nbytes(AL_TYPE1B, sizeof(al->type), &al->type);
-//        eeprom_read_nbytes(AL_SN1B, sizeof(al->serialNumber), &al->serialNumber);
-//        eeprom_read_nbytes(AL_CONFIGED1B, sizeof(al->configured), &al->configured);
-//        break;
-//    case DATA_ADC_COEF:
-//        adcCal_t *ad = malloc(sizeof(adcCal_t));
-//        if (ad == NULL) {
-//            // Handle allocation failure
-//            return NULL;
-//        }
-//        ptr = ad;
-//        break;
-//    default:
-//        break;
-//    }
-//
-//    return ptr;
-//}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* DO NOT USE */
-//uint8_t processInput(char option){
-//	// default
-//	char msg[50];
-//	// ADC measurement
-//	char adcmsg[50];
-//	float vin = 0.0;
-//	uint32_t adcReading = 0;
-//
-//
-//	// EEPROM
-//	uint8_t chipAddress = 0xA0; // 0b1010000 7 bit address
-//	uint8_t dataReceive[10];
-//	uint8_t dataByte[4]; // = {0x00, 5, 12, 4}; // store 5 in memory 0x00 and 12 in (n+1)= 0x01
-//	uint8_t startAddress[1] = {0x00};
-//	char output[50];
-//
-//	// print what was selected
-//	sprintf(msg, "\r\n> Executing OPTION %d...\r\n",option);
-//	HAL_UART_Transmit(&huart1, msg, strlen(msg), HAL_MAX_DELAY);
-//
-//	// Execute selected action
-//	switch(option){
-//	case '0': // toggle green led
-//		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-//		return 0;
-//	case '1': // Set relay XBT1
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K1_GPIO_Port, RELAY_K1_Pin, 10); // SET relay k1
-//			drive_relay(SSR_1_GPIO_Port, SSR_1_Pin, 1); // SET SSR1
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case '2': // Set relay XBT2
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K2_GPIO_Port, RELAY_K2_Pin, 10); // SET relay k1
-//			drive_relay(SSR_2_GPIO_Port, SSR_2_Pin, 1); // SET SSR1
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case '3': // Set relay XBT3
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K3_GPIO_Port, RELAY_K3_Pin, 10); // SET relay k3
-//			drive_relay(SSR_3_GPIO_Port, SSR_3_Pin, 1); // SET SSR3
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case '4': // Set relay XBT4
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K4_GPIO_Port, RELAY_K4_Pin, 10); // SET relay k4
-//			drive_relay(SSR_4_GPIO_Port, SSR_4_Pin, 1); // SET SSR4
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case '5': // Set relay XBT5
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K5_GPIO_Port, RELAY_K5_Pin, 10); // SET relay k5
-//			drive_relay(SSR_5_GPIO_Port, SSR_5_Pin, 1); // SET SSR5
-//			relayLock = reFree;
-//		}
-//
-//
-//		return 0;
-//	case '6': // Set relay XBT6
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K6_GPIO_Port, RELAY_K6_Pin, 10); // SET relay k6
-//			drive_relay(SSR_6_GPIO_Port, SSR_6_Pin, 1); // SET SSR6
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case '7': // Set relay XBT7
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K7_GPIO_Port, RELAY_K7_Pin, 10); // SET relay k7
-//			drive_relay(SSR_7_GPIO_Port, SSR_7_Pin, 1); // SET SSR7
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case '8': // Set relay XBT8
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K8_GPIO_Port, RELAY_K8_Pin, 10); // SET relay k8
-//			drive_relay(SSR_8_GPIO_Port, SSR_8_Pin, 1); // SET SSR8
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case '9': // Set relay GND
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K9_K10_GND_COND_GPIO_Port, RELAY_K9_K10_GND_COND_Pin, 10); // SET relay k9 k10
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case 'q': // Set relay CAL CONT
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K11_CAL_CONT_GPIO_Port, RELAY_K11_CAL_CONT_Pin, 10); // SET relay k11
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case 'w': // Set relay CAL RES
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_K12_CAL_RES_GPIO_Port, RELAY_K12_CAL_RES_Pin, 10); // SET relay k12
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case 'e': // Reset 1 (1st half)
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_RESET_1_GPIO_Port, RELAY_RESET_1_Pin, 10); // RESET relay k1, k2, k3, k4, SSR1, SSR2, SSR3, SSR4
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case 'r': // Reset 2 (2nd half)
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_RESET_2_GPIO_Port, RELAY_RESET_2_Pin, 10); // RESET relay k5, k6, k7, k8, SSR5, SSR6, SSR7, SSR8
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case 't': // Reset 3 (aux relays)
-//		if(relayLock == reFree){
-//			relayLock = reLocked;
-//			drive_relay(RELAY_RESET_3_GPIO_Port, RELAY_RESET_3_Pin, 10); // RESET relay k9, k10, k11, k12
-//			relayLock = reFree;
-//		}
-//
-//		return 0;
-//	case 'y': // read ADC Vin
-//		// take 10 an average of samples
-//		for(uint8_t i=0; i<10; i++){
-//			HAL_ADC_Start(&hadc1);
-//			HAL_ADC_PollForConversion(&hadc1, 100);
-//			adcReading += HAL_ADC_GetValue(&hadc1);
-//			HAL_ADC_Stop(&hadc1);
-//			HAL_Delay(1);
-//		}
-//		adcReading = adcReading/10;
-//		vin = adcReading * 0.0083 + 0.3963; // 15.23 store coef. in eeprom
-//		// get 1 decimal
-//		int dec = (int)(vin * 10 - ((int)vin * 10)); // 152 - 150 = 2
-//
-//		sprintf(adcmsg, "[AD# %d] Vin= %d.%d V\r\n", (int)adcReading,(int)vin, dec);
-//		HAL_UART_Transmit(&huart1, adcmsg, strlen(adcmsg), HAL_MAX_DELAY);
-//		return 0;
-//	case 'u': // write eeprom
-//		// store 2 8-bit values in eeprom
-//		uint8_t a,b;
-//		char rxBuffer[1];
-//		HAL_UART_Transmit(&huart1, "Val-1= ", strlen("Val-1= "), HAL_MAX_DELAY);
-//		HAL_UART_Receive(&huart1, rxBuffer, 1, HAL_MAX_DELAY);
-//		HAL_UART_Transmit(&huart1, rxBuffer, 1, HAL_MAX_DELAY); // echo
-//		a = atoi(rxBuffer);
-//		HAL_UART_Transmit(&huart1, "\r\nVal-2= ", strlen("\r\nVal-2= "), HAL_MAX_DELAY);
-//		HAL_UART_Receive(&huart1, rxBuffer, 1, HAL_MAX_DELAY);
-//		HAL_UART_Transmit(&huart1, rxBuffer, 1, HAL_MAX_DELAY); // echo
-//		b = atoi(rxBuffer);
-//
-//		// store 2 bytes starting in address 0x00 total 1 kbit = 1024 bit = 128 bytes
-//		// 1 page = 8 bytes >> 16 pages >> (0x00) 0-7, 8-15, 16-23, ... 120-127 (0x7F)
-//		dataByte[0] = 0x00;
-//		dataByte[1] = a;
-//		dataByte[2] = b;
-//		dataByte[3] = 249; // 0-255 8bits
-//		HAL_I2C_Master_Transmit(&hi2c1, chipAddress , dataByte, 4, HAL_MAX_DELAY); // send word address, value
-//		HAL_Delay(10);
-//
-//		// read 2 bytes from data address 0x00, 0x01
-//		HAL_I2C_Master_Transmit(&hi2c1, chipAddress , startAddress, 1, HAL_MAX_DELAY); // dummy write with word address 0x00 as starting address
-//		HAL_Delay(10);
-//		HAL_I2C_Master_Receive(&hi2c1, chipAddress, dataReceive, 3, HAL_MAX_DELAY);
-//
-//		sprintf(output,"\r\nStored values: %i, %i, %i\r\n", dataReceive[0], dataReceive[1], dataReceive[2]);
-//		HAL_UART_Transmit(&huart1, output, strlen(output), HAL_MAX_DELAY);
-//		return 0;
-//	case 'i': // read epprom
-//		// read 2 bytes from data address 0x00, 0x01
-//		HAL_I2C_Master_Transmit(&hi2c1, chipAddress , startAddress, 1, HAL_MAX_DELAY); // dummy write with word address 0x00 as starting address
-//		HAL_Delay(10);
-//		HAL_I2C_Master_Receive(&hi2c1, chipAddress, dataReceive, 3, HAL_MAX_DELAY);
-//
-//		sprintf(output,"Stored values: %i, %i, %i\r\n", dataReceive[0], dataReceive[1], dataReceive[2]);
-//		HAL_UART_Transmit(&huart1, output, strlen(output), HAL_MAX_DELAY);
-//		return 0;
-//	case 'o': // change MUX to GPS
-//		HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, RESET);
-//		return 0;
-//	case 'p': // change MUX to STM32
-//		HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, SET);
-//		return 0;
-//	case 'a': // Run motor 1 CW
-//		if(motorLock == mFree){
-//			motorLock = mLocked;
-//			drive_motor(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, CW, 5000);
-//			motorLock = mFree;
-//		}
-//		return 0;
-//
-//	case 's': // Run motor 1 CCW
-//		if(motorLock == mFree){
-//			motorLock = mLocked;
-//			drive_motor(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, CCW, 5000);
-//			motorLock = mFree;
-//		}
-//		return 0;
-//	case 'd': // Run motor 2 CW
-//		if(motorLock == mFree){
-//			motorLock = mLocked;
-//			drive_motor(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, CW, 5000);
-//			motorLock = mFree;
-//		}
-//		return 0;
-//	case 'f': // Run motor 2 CCW
-//		if(motorLock == mFree){
-//			motorLock = mLocked;
-//			drive_motor(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, CCW, 5000);
-//			motorLock = mFree;
-//		}
-//		return 0;
-//	case 'g': // Run motor 3 CW
-//		if(motorLock == mFree){
-//			motorLock = mLocked;
-//			drive_motor(ENABLE_M3_GPIO_Port, ENABLE_M3_Pin, CW, 5000);
-//			motorLock = mFree;
-//		}
-//		return 0;
-//	case 'h': // Run motor 3 CCW
-//		if(motorLock == mFree){
-//			motorLock = mLocked;
-//			drive_motor(ENABLE_M3_GPIO_Port, ENABLE_M3_Pin, CCW, 5000);
-//			motorLock = mFree;
-//		}
-//		return 0;
-//	case 'j': // Run motor 4 CW
-//		if(motorLock == mFree){
-//			motorLock = mLocked;
-//			drive_motor(ENABLE_M4_GPIO_Port, ENABLE_M4_Pin, CW, 5000);
-//			motorLock = mFree;
-//		}
-//		return 0;
-//	case 'k': // Run motor 4 CCW
-//		if(motorLock == mFree){
-//			motorLock = mLocked;
-//			drive_motor(ENABLE_M4_GPIO_Port, ENABLE_M4_Pin, CCW, 5000);
-//			motorLock = mFree;
-//		}
-//		return 0;
-//	case 'l': // Run motor 5 CW
-//		if(motorLock == mFree){
-//			motorLock = mLocked;
-//			drive_motor(ENABLE_M5_GPIO_Port, ENABLE_M5_Pin, CW, 5000);
-//			motorLock = mFree;
-//		}
-//		return 0;
-//	case ';': // Run motor 5 CCW
-//		if(motorLock == mFree){
-//			motorLock = mLocked;
-//			drive_motor(ENABLE_M5_GPIO_Port, ENABLE_M5_Pin, CCW, 5000);
-//			motorLock = mFree;
-//		}
-//		return 0;
-//
-//	default:
-//		sprintf(msg, "\r\n> %d is not a valid option!", option);
-//		HAL_UART_Transmit(&huart1, msg, strlen(msg), HAL_MAX_DELAY);
-//		return 1;
+/* Writes a 32-bit number to memory [0- 4,294,967,296]
+ * or any 4-byte value */
+//void eeprom_write_uint32(uint8_t baseAddress, uint32_t data){
+//	//[byte0][byte1][byte2][byte3] = 32 bit data
+//	uint8_t dataByte[4] = {(data>>0), (data>>8), (data>>16), (data>>24)}; // break up each byte of the 32 bit number
+//	for(uint8_t i = 0; i < 4; i++){
+//		eeprom_write(baseAddress+i, dataByte[i]);
 //	}
 //}
-
-
 
 
 
