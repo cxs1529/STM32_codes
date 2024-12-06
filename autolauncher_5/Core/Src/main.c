@@ -37,83 +37,18 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-//typedef enum {CCW, CW} motorDir_t; // Relay Control variables
-//typedef enum {MUX_GPS, MUX_STM32} mux_t; // TX from GPS MUX=0, TX from microcontroller MUX=1
-//typedef enum {AL_TUBECOUNT1B, AL_TYPE1B, AL_SN1B, AL_CONFIGED1B,
-//				M_RUNTIME2B = 8, M_PWM_FREQ2B = 10 , M_SAMPLEPERIOD2B = 12, M_WIRING1B = 14,
-//				M_1COUNT2B = 16, M_2COUNT2B = 18, M_3COUNT2B = 20, M_4COUNT2B = 22, M_5COUNT2B = 24, M_6COUNT2B = 26, M_7COUNT2B = 28, M_8COUNT2B = 30,
-//				M_1MXAMP2B = 32, M_2MXAMP2B = 34, M_3MXAMP2B = 36, M_4MXAMP2B = 38, M_5MXAMP2B = 40, M_6MXAMP2B = 42, M_7MXAMP2B = 44, M_8MXAMP2B = 46} memoryMap_t; // pages 0-7, 8-15, 16-23, 24-31, 32-39,
-
-
-//typedef struct {
-//	uint8_t serialNumber; // 2 digit autolauncher S/N XX [0-255]
-//	char tubeCount; // 6 or 8
-//	char type; // R regular or X extended (amvereseasv6.0, v8.0, v8.1 (long) )
-//	uint8_t pcbSerial; // 2 digit PCB serialnum ALB3XX [0-255]
-//	char configured; // if the launcher was configured (stored in memory) this will have a 'Y', otherwise 'N'
-//} launcher_t;
-
-//typedef struct {
-//	const uint16_t MEMORY_MAX; // maxAddress >> 0x7F (127)
-//	const uint16_t MEMORY_MIN; // memory address 0x00 (0)
-//	const uint8_t I2C_BUS_ADDRESS;
-//	const uint8_t WAIT; // delay in ms after a write operation
-//} eeprom_t;
-
-//typedef struct {
-//	uint16_t runTime; // motor runtime in ms [0-65535]
-//	uint16_t samplePeriod; // ADC sample period in ms for Im, Vin and internal temp
-//	uint16_t pwmFreq;
-//	uint8_t wiring; // 0 or 1 will make CW/CCW run the motors in one direction of the other
-//	uint16_t imax[8]; // max current logged for each motor
-//	uint16_t count[8]; // counter, number of uses for each motor
-//} motor_t;
-
-//typedef struct {
-//	uint16_t rawValue; // AD# counts
-//	float realValue; // physical value
-//} analog_t;
-//
-//typedef struct {
-//	analog_t voltage;
-//	analog_t current;
-//	analog_t temperature;
-//} adcScan_t;
-
 
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-// Stepper motor parameters
-//#define MOTOR_RUNTIME_DEFAULT 8000 // default time to run motor in milliseconds to extend/retract pin, if not configured and stored in memory
-//#define MOTOR_RUNTIME_MAX 20000 // max allowed time in ms
-//#define MOTOR_RUNTIME_MIN 2000 // min allowed time in ms
-//#define MOTOR_SAMPLE_PERIOD_DEFAULT 500 // default time period to sample ADC current, voltage and internal temp
-//#define MOTOR_SAMPLE_PERIOD_MAX 2000 // max allowed time in ms
-//#define MOTOR_SAMPLE_PERIOD_MIN 100 // min allowed time in ms
-//#define MOTOR_PWM_FREQ_DEFAULT 200 // Hz pwm step freq, if not configured in memory
-//#define MOTOR_PWM_FREQ_MIN 50 // Hz lower limit for config
-//#define MOTOR_PWM_FREQ_MAX 500 // Hz upper limit for config
-//#define MOTOR_WIRING_DEFAULT 0 // Use 1 or 0 based on motor wiring. This changes the direction to retract/extend pins
-//#define MOTOR_TOGGLE_LED 1 // toggle led while motor is running after each ADC conversion
 #define MOTOR_GREASE_CYCLES 10 // grease pin cycle count
 // Relay parameters
 #define RELAY_ON_TIME 10 // time to keep relay coils energized in milliseconds
 #define RELAY_INTERVAL_TIME 10 // time in between relay activations when in sequence, in milliseconds
 // EEPROM parameters
-//#define EEPROM_BUS_ADDRESS 0xA0 // 0b1010000 7-bit device address
-// ADC parameters
-//#define ADC_BUFFER 3 // number of channels to read with ADC in scan mode (Vin, current and internal temperature)
-//#define ADC_SAMPLES 100 // number of samples to average ADC values
-//#define MAX_CHECKLIST_SIZE 10 // max number of items to check against when user inputs a character. Used in get_user_input()
-//#define ADC_T_SLOPE 4.3 // Internal Temp sensor coef: AVG_SLOPE_avg = 4.3, AVG_SLOPE_min = 4.0, AVG_SLOPE_max = 4.6; // average slope [mV/C]
-//#define ADC_T_V25_OFFSET 1430 // V25_avg = 1430, V25_min = 1340, V25_max = 1520 ; // Voltage at 25 degrees [mV]
-//#define ADC_V_SLOPE 0.0083
-//#define ADC_V_OFFSET 0.3963
-//#define ADC_I_SLOPE 0.163
-//#define ADC_I_OFFSET 7.3581
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -125,7 +60,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-//enum motorLock_t {mFree, mLocked} motorLock = mFree; // motor mutex to ensure one motor runs at a time
 relayLock_t relayLock = reFree; // relay mutex to ensure one coil is driven at a time
 rxStatus_t rxStatus = idle; // flag, indicate if a new char was sent over serial. Set to 'active' in the UART interrupt callback, and 'idle' after processing command
 activeMenu_t activeMenu = mainMenu; // menu state to determine how the received command will be processed (config or main)
@@ -138,7 +72,6 @@ char rxBuffer[1] = "\0"; // UART1 receive buffer from computer, a char will be s
 char rxChar = '\0'; // UART1 receive character, == xBuffer[0]
 // ADC conversion flags
 uint8_t adcComplete = 0; // flag used to print ADC values
-//uint8_t adcTimerTrigger = 0; // flag used to trigger an ADC conversion in DMA mode, located in TIM4_IRQHandler(void) (stm32f1xx_it.c)
 uint8_t adcDMAFull = 0; // this flag is set by the DMA IRQ when the adc buffer is full, located in DMA1_Channel1_IRQHandler(void) (stm32f1xx_it.c)
 /* USER CODE END PV */
 
@@ -154,9 +87,7 @@ uint8_t is_num(char c);
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart);
 void print_serial_number(void);
 void uartrx_interrupt_init(void);
-//uint8_t get_decimal(float value, uint8_t digits);
-// ADC functions
-//adcScan_t adc_get_values(void);
+
 // Menu control functions
 void menu_init(void);
 void menu_main_print(void);
@@ -174,7 +105,6 @@ void motor_read_parameters(void);
 void menu_help_print(void);
 void menu_config_tubes_type_serial(void);
 void menu_print_volt_temp(void);
-//uint8_t processInput(char option); // process the character received *NOT IN USE*
 
 // Relay control functions
 void connect_xbt_pin(uint8_t xbtNum); // connect ABC to a desired XBT 1-8
@@ -185,27 +115,9 @@ void reset_relay(void); // reset all relays, ground ABC
 void drive_relay(GPIO_TypeDef * relayPort, uint16_t relayPin, uint8_t onTime); // drive the desired relay: port, pin & time coil is energized [ms]
 void relay_init(void); // initialized relays in reset state
 
-// Motor control functions
-//uint16_t motor_drive(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t motorDirection, uint32_t runtime ); // drive the desired motor
-//void motor_init(void); // disable all motor enable pins
-//void motor_select(uint8_t xbtNum, motorDir_t dir);
-//void motor_count_update(uint8_t xbtNum);
-//void motor_imax_update(uint8_t xbtNum, uint16_t imax);
-//void retract_pin(uint8_t xbtNum);
-//void extend_pin(uint8_t xbtNum);
-//void retract_all_pins(uint8_t countLimit);
-//void extend_all_pins(uint8_t countLimit);
-//void grease_pins(uint8_t cycles);
 // RS232 TX control
 void multiplexer_set(mux_t select);
-// EEPROM control
-//uint8_t eeprom_read(uint8_t memoryAddress);
-//void eeprom_write(uint8_t memoryAddress, uint8_t dataByte);
-//void eeprom_print_memory_map(void);
-//uint8_t eeprom_clear(uint8_t memoryStart, uint8_t memoryEnd);
-//void eeprom_clear_memory_range(void);
-//void eeprom_write_nbytes(uint8_t baseAddress, uint8_t bytes, void * pData);
-//void eeprom_read_nbytes(uint8_t baseAddress, uint8_t bytes, void * pData);
+
 void parameter_init(void);
 /* USER CODE END PFP */
 
@@ -1244,19 +1156,6 @@ uint8_t is_num(char c){
 }
 
 
-///* Returns the decimal digits of a float as an integer
-// * Parameters: float number to retreive decimals, number of decimal digits */
-//uint8_t get_decimal(float value, uint8_t digits){
-//	uint8_t dec;
-//	uint32_t exp = 1;
-//
-//	for(uint8_t i = 0; i < digits ; i++){
-//		exp = exp * 10;
-//	}
-//	dec = (value - (int)value) * exp;
-//	return dec;
-//}
-
 
 /* Select the source of RS232
  * Parameters: select {MUX_GPS, MUX_STM32} */
@@ -1431,403 +1330,6 @@ void drive_relay(GPIO_TypeDef * relayPort, uint16_t relayPin, uint8_t onTime){
 	HAL_GPIO_WritePin(relayPort, relayPin, RESET); // release
 	HAL_Delay(2);
 }
-
-
-
-
-/*************************************** MOTOR CONTROL FUNCTIONS ***************************************/
-
-//// ALV2 (previous firmware) had a sequence with 4 delays of 8 ms, repeated in 300 steps = 4 * 8 ms * 300 = 7200 ms
-//
-///* Extend all pins up to countLimit or eeprom.tubes, whichever is smaller
-// * Parameter: countLimit, extend all pins up to this number */
-//void extend_all_pins(uint8_t countLimit){
-//	if(countLimit > 0){
-//		for(uint8_t i = 1; (i <= countLimit) && (i <= launcher.tubeCount); i++){
-//			printf("\r\n> Extending pin %i\r\n", i);
-//			extend_pin(i);
-//			if(rxChar == '@'){
-//				printf("\r\n** Process finished by user **\r\n");
-//				break;
-//			}
-//		}
-//	}
-//}
-//
-///* Retract all pins up to countLimit or eeprom.tubes, whichever is smaller
-// * Parameter: countLimit, retract all pins up to this number */
-//void retract_all_pins(uint8_t countLimit){
-//	if(countLimit > 0){
-//		for(uint8_t i = 1; (i <= countLimit) && (i <= launcher.tubeCount); i++){
-//			printf("\r\n> Retracting pin %i\r\n", i);
-//			retract_pin(i);
-//			if(rxChar == '@'){
-//				printf("\r\n** Retract all process finished by user **\r\n");
-//				break;
-//			}
-//		}
-//	}
-//}
-//
-//void grease_pins(uint8_t cycles){
-//	uint8_t stopFlag = 0;
-//
-//	printf("\r\n> Greasing pins ...\r\n");
-//	for(uint8_t j = 0; j < cycles && j < 20 ; j++){
-//		for(uint8_t k = 1; k <= launcher.tubeCount; k++){
-//			printf("\r\n> Retracting pin %i\r\n", k);
-//			retract_pin(k);
-//			if(rxChar == '@'){
-//				stopFlag = 1;
-//				break;
-//			}
-//			printf("\r\n> Extending pin %i\r\n", k);
-//			extend_pin(k);
-//			if(rxChar == '@'){
-//				stopFlag = 1;
-//				break;
-//			}
-//		}
-//		if(stopFlag) break;
-//	}
-//	if(stopFlag){
-//		printf("\r\n** Grease process finished by user **\r\n");
-//	}
-//}
-//
-//
-///* Extend pin wrapper
-// * Parameter: xbtNum [1-8] */
-//void extend_pin(uint8_t xbtNum){
-//	if (motor.wiring == 0){ // select spin direction based on wiring
-//		motor_select(xbtNum, CW);
-//	} else {
-//		motor_select(xbtNum, CCW);
-//	}
-//}
-//
-///* Retract pin wrapper
-// * Parameter: xbtNum [1-8] */
-//void retract_pin(uint8_t xbtNum){
-//	if (motor.wiring == 0){ // select spin direction based on wiring
-//		motor_select(xbtNum, CCW);
-//	} else {
-//		motor_select(xbtNum, CW);
-//	}
-//}
-//
-///* Motor driver selector
-// * direction to retract/extend may be different based on wiring
-// * Parameters: XBT number, direction {CW,CCW} */
-//void motor_select(uint8_t xbtNum, motorDir_t dir){
-//	uint16_t rtime = motor.runTime;
-//	uint16_t imax = 0;
-//
-//	if( !(motor.runTime >= MOTOR_RUNTIME_MIN && motor.runTime <= MOTOR_RUNTIME_MAX) ){
-//		rtime = MOTOR_RUNTIME_DEFAULT; // run with default runtime
-//	}
-//
-//	if(motorLock == mFree){
-//		motorLock = mLocked;
-//		switch (xbtNum){
-//		case 1:
-//			imax = motor_drive(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, dir, rtime);
-//			break;
-//		case 2:
-//			imax = motor_drive(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, dir, rtime);
-//			break;
-//		case 3:
-//			imax = motor_drive(ENABLE_M3_GPIO_Port, ENABLE_M3_Pin, dir, rtime);
-//			break;
-//		case 4:
-//			imax = motor_drive(ENABLE_M4_GPIO_Port, ENABLE_M4_Pin, dir, rtime);
-//			break;
-//		case 5:
-//			imax = motor_drive(ENABLE_M5_GPIO_Port, ENABLE_M5_Pin, dir, rtime);
-//			break;
-//		case 6:
-//			imax = motor_drive(ENABLE_M6_GPIO_Port, ENABLE_M6_Pin, dir, rtime);
-//			break;
-//		case 7:
-//			imax = motor_drive(ENABLE_M7_GPIO_Port, ENABLE_M7_Pin, dir, rtime);
-//			break;
-//		case 8:
-//			imax = motor_drive(ENABLE_M8_GPIO_Port, ENABLE_M8_Pin, dir, rtime);
-//			break;
-//		default:
-//			printf("\r\n** ERROR: XBT %i motor not found **\r\n", xbtNum);
-//			break;
-//		}
-//		// release motor lock
-//		motorLock = mFree;
-//		// update motor stats
-//		if(xbtNum >= 1 && xbtNum <= 8 ){
-//			// store use count
-//			motor_count_update(xbtNum);
-//			// store Imax if new max is found
-//			motor_imax_update(xbtNum, imax);
-//		}
-//	}
-//}
-//
-//
-///* Update the stepper motor use count
-// * Parameter: xbt tube used
-// * Warning: The EEPROM memory locations for motor.count[i] must be cleared to 0,
-// * otherwise values present from factory will be 0xFFFF (65535) */
-//void motor_count_update(uint8_t xbtNum){
-//	motor.count[xbtNum-1]++;
-//	eeprom_write_nbytes(M_1COUNT2B + (xbtNum-1)*2, sizeof(motor.count[xbtNum-1]), &motor.count[xbtNum-1]);
-//}
-//
-//
-///* Update the maximum logged current for each stepper, if applicable
-// * Warning: The EEPROM memory locations for motor.imax[i] must be cleared to 0,
-// * otherwise values present from factory will be 0xFFFF (65535) >> any imax */
-//void motor_imax_update(uint8_t xbtNum, uint16_t imax){
-//	if( motor.imax[xbtNum-1] < imax){
-//		motor.imax[xbtNum-1] = imax;
-//		eeprom_write_nbytes(M_1MXAMP2B + (xbtNum-1)*2, sizeof(motor.imax[xbtNum-1]), &motor.imax[xbtNum-1]);
-//	}
-//}
-//
-///* Initialize all motor drivers in disabled mode */
-//void motor_init(void){
-//	  HAL_GPIO_WritePin(ENABLE_M1_GPIO_Port, ENABLE_M1_Pin, RESET); // start disabled
-//	  HAL_GPIO_WritePin(ENABLE_M2_GPIO_Port, ENABLE_M2_Pin, RESET); // start disabled
-//	  HAL_GPIO_WritePin(ENABLE_M3_GPIO_Port, ENABLE_M3_Pin, RESET); // start disabled
-//	  HAL_GPIO_WritePin(ENABLE_M4_GPIO_Port, ENABLE_M4_Pin, RESET); // start disabled
-//	  HAL_GPIO_WritePin(ENABLE_M5_GPIO_Port, ENABLE_M5_Pin, RESET); // start disabled
-//	  HAL_GPIO_WritePin(ENABLE_M6_GPIO_Port, ENABLE_M6_Pin, RESET); // start disabled
-//	  HAL_GPIO_WritePin(ENABLE_M7_GPIO_Port, ENABLE_M7_Pin, RESET); // start disabled
-//	  HAL_GPIO_WritePin(ENABLE_M8_GPIO_Port, ENABLE_M8_Pin, RESET); // start disabled
-//	  // calibrate ADC
-//	  HAL_ADCEx_Calibration_Start(&hadc1);
-//}
-//
-//
-///* Drive desired motor to extend/retract pin, stop with '@'
-// * ADC will sample Voltage, current and internal STM32 temperature periodically based on ADC sampling parameters
-// * Parameters:
-// * - Motor enable port and pin
-// * - Motor direction CW/CCW
-// * - Motor runtime in ms
-// * Return: max current logged in mA */
-//uint16_t motor_drive(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t motorDirection, uint32_t runTime ){
-//	uint16_t imax = 0;
-//	uint32_t timeStart, timeNow;
-//	uint16_t adcSampleCount = 0;
-//	adcScan_t adcReading;
-//	// Initialize PWM
-//	HAL_GPIO_WritePin(motorPort, motorPin, RESET); // make sure driver pin is disabled
-//	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3); // initialize PWM pulses for DRV8826
-//	HAL_GPIO_WritePin(DIR_GPIO_Port,DIR_Pin, motorDirection); // set motor direction
-//	HAL_GPIO_WritePin(motorPort, motorPin, SET); // enable driver to run motor
-//	// initial timer count using SysTick timer (32 bit variable uwTick incremented every 1 ms, MAX = 50 days)
-//	timeStart = HAL_GetTick();
-//	// get 1 current, voltage, temp reading every samplePeriod ms using TIM4 events
-//	HAL_TIM_PWM_Start_IT(&htim4, TIM_CHANNEL_4); // trigger adc conversions in DMA mode every x ms
-//	printf("\r\nMotor Running (Stop with '@') ...\r\n");
-//	// Run motor checking Systick time against runtime, sample ADC values and stop if '@' is received
-//	while(1){
-//		// track motor runtime and break loop after desired time elapsed
-//		timeNow = HAL_GetTick();
-//		if(timeNow >= timeStart){
-//			if((timeNow - timeStart) >= runTime) break;
-//		} else { // if timeNow < timeStart, this only happens when uwTick ~ 2^32 (50 days) and there was an overflow
-//			if( (HAL_MAX_DELAY - timeStart + timeNow) >= runTime) break;
-//		}
-//		// check if user sent stop signal
-//		if(active == rxStatus){ // set to active with UART RX interrupt
-//			rxStatus = idle;
-//			if(rxChar == '@'){
-//				printf("\r\n** Motor stopped by user! **\r\n");
-//				break;
-//			}
-//		}
-//		// Print ADC values when flag is set in TIM4_IRQHandler (stm32f1xx_it.c)
-//		if(adcTimerTrigger == 1){
-//			// toggle led if control flag is set by user
-//			if(MOTOR_TOGGLE_LED == 1){
-//				HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-//			}
-//			// reset adc timer flag
-//			adcTimerTrigger = 0;
-//			// average all values and get conversions
-//			adcReading = adc_get_values();
-//			// print values read
-//			printf("<%02i> Current [AD# %i]: %i.%i mA | Voltage [AD# %i]: %i.%i V | Temperature [AD# %i]: %i.%i C\r\n", (int)adcSampleCount,
-//					 	 (int)adcReading.current.rawValue, (int)adcReading.current.realValue, get_decimal(adcReading.current.realValue, 1),
-//						 (int)adcReading.voltage.rawValue, (int)adcReading.voltage.realValue, get_decimal(adcReading.voltage.realValue, 1),
-//						 (int)adcReading.temperature.rawValue, (int)adcReading.temperature.realValue, get_decimal(adcReading.temperature.realValue, 1));
-//			adcSampleCount++;
-//			// update imax
-//			if(imax < (uint16_t)adcReading.current.realValue){ // if previous imax is less than new one, replace it
-//				imax = (uint16_t)adcReading.current.realValue;
-//			}
-//		}
-//	}
-//	// stop PWM and ADC sample timers
-//	HAL_GPIO_WritePin(motorPort, motorPin, RESET); // disable motor driver
-//	HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_3); // stop PWM signal to step the motor
-//	//HAL_ADC_Stop_DMA(&hadc1); // stop ADC conversion if there was one triggered before exiting the while(1)
-//	HAL_TIM_PWM_Stop_IT(&htim4, TIM_CHANNEL_4); // stop timer triggering adc conversions
-//
-//	return imax;
-//}
-
-
-/*************************************** ADC CONTROL FUNCTIONS ***************************************/
-
-///* Read voltage, current and internal STM32 temperature
-// * Average a number of readings defined in ADC_SAMPLES and converts them to real values
-// * Returns a struct with AD counts and physical values */
-//adcScan_t adc_get_values(void){
-//	uint16_t adcBuffer[ADC_BUFFER] = {'\0'}; // store 3 ADC measurements in DMA mode: [Vin0,Im0,TempInt0,Vin1,Im1,...]
-//	uint32_t vAccum = 0, iAccum = 0, tAccum = 0;
-//	adcScan_t adc = {.current = {0,0}, .voltage = {0,0}, .temperature = {0,0} };
-//
-//	// Sample ADC scan and fill the DMA buffer (3 channels: AIN10, AIN11, TEMPINT)
-//	for(uint16_t j = 0; j < ADC_SAMPLES; j++){
-//		HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcBuffer, ADC_BUFFER);
-//		vAccum += adcBuffer[0];
-//		iAccum += adcBuffer[1];
-//		tAccum += adcBuffer[2];
-////		HAL_Delay(1); // needed for debugging
-//	}
-//	HAL_ADC_Stop_DMA(&hadc1); // stop ADC conversions
-//	// calculate averages and real values
-//	// voltage
-//	adc.voltage.rawValue = (uint16_t) ( vAccum / ADC_SAMPLES ); // ADC counts, divide by 3 num of buffer slots since each scan has 3 readings
-//	adc.voltage.realValue = (float) adc.voltage.rawValue * ADC_V_SLOPE + ADC_V_OFFSET; // calibration coeff should be taken from eeprom
-//	// current
-//	adc.current.rawValue = (uint16_t) ( iAccum / ADC_SAMPLES ); // ADC counts
-//	adc.current.realValue =  (float) adc.current.rawValue * ADC_I_SLOPE + ADC_I_OFFSET; // mA - opAmp G = 50, Rsense = 0.10 ohm
-//	// internal temperature
-//	adc.temperature.rawValue = (uint16_t) ( tAccum / ADC_SAMPLES ); // ADC counts
-//	adc.temperature.realValue = ( (ADC_T_V25_OFFSET - (adc.temperature.rawValue * (3300.0/4096.0) ) )  / ADC_T_SLOPE) + 25.0 ;
-//
-//	return adc;
-//}
-
-
-
-
-///*************************************** EEPROM FUNCTIONS ***************************************/
-///* Model: Microchip AT24XX01
-// * Max freq 1 MHz, 1 Kbit memory (1024 bit), 128 x 8-bit block, 5 ms page write,
-// * 8-Byte write pages, fixed device address 1010-xxxRW, 128 bytes memory range {00-7F} */
-//
-///* Write 1 byte in epprom
-// * Parameters: memory address [0-127], 1 byte of data */
-//void eeprom_write(uint8_t memoryAddress, uint8_t dataByte){
-//	uint8_t txBuff[2] = {memoryAddress, dataByte};
-//	if( memoryAddress >= eeprom.MEMORY_MIN && memoryAddress <= eeprom.MEMORY_MAX ){
-//		HAL_I2C_Master_Transmit(&hi2c1, EEPROM_BUS_ADDRESS , txBuff, 2, HAL_MAX_DELAY); // send word address, value
-//		HAL_Delay(eeprom.WAIT); // wait for data to be written
-//	} else {
-//		printf("** ERROR: memory address %i out of range [%i-%i] **\r\n", memoryAddress, eeprom.MEMORY_MIN, eeprom.MEMORY_MAX);
-//	}
-//}
-//
-///* Read 1 byte from epprom
-// * Parameters: memory address [0-127]
-// * Returns 1 byte of data */
-//uint8_t eeprom_read(uint8_t memoryAddress){
-//	uint8_t addressBuffer[1] = {memoryAddress};
-//	uint8_t rxBuff[1] = {0};
-//	if( memoryAddress >= eeprom.MEMORY_MIN && memoryAddress <= eeprom.MEMORY_MAX ){
-//		HAL_I2C_Master_Transmit(&hi2c1, EEPROM_BUS_ADDRESS , addressBuffer, 1, HAL_MAX_DELAY); // dummy write to set pointer to desired memory address
-//		HAL_Delay(eeprom.WAIT);
-//		HAL_I2C_Master_Receive(&hi2c1, EEPROM_BUS_ADDRESS, rxBuff, 1, HAL_MAX_DELAY); // send command to read 1 byte at current memory address pointer
-//		HAL_Delay(eeprom.WAIT);
-//	} else {
-//		printf("** ERROR: memory address %i out of range [%i-%i] **\r\n", memoryAddress, eeprom.MEMORY_MIN, eeprom.MEMORY_MAX);
-//	}
-//	return ((uint8_t) rxBuff[0]);
-//}
-//
-///* Clear memory within a given range of addresses
-// * Parameters: start address and end address (inclusive) [0-127]
-// * Returns number of blocks cleared */
-//uint8_t eeprom_clear(uint8_t memoryStart, uint8_t memoryEnd){
-//	uint8_t i;
-//	if( memoryStart >= eeprom.MEMORY_MIN && memoryEnd <= eeprom.MEMORY_MAX && memoryStart <= memoryEnd ){
-//		for(i = memoryStart ; i <= memoryEnd ; i++){
-//			eeprom_write(i, 0); // write 0 to corresponding byte
-//		}
-//	} else {
-//		printf("** ERROR: incorrect memory range [%i-%i] or start > end **\r\n", eeprom.MEMORY_MIN , eeprom.MEMORY_MAX);
-//	}
-//	return (i-memoryStart);
-//}
-//
-///* print memory map on eeprom */
-//void eeprom_print_memory_map(void){
-//	printf("\r\n");
-//	printf("|========================================|\r\n");
-//	printf("|              MEMORY MAP                |\r\n");
-//	printf("|========================================|\r\n");
-//	// autolauncher aprameters
-//	printf("| [%03i]        AL_TUBECOUNT              |\r\n", AL_TUBECOUNT1B);
-//	printf("| [%03i]        AL_TYPE                   |\r\n", AL_TYPE1B);
-//	printf("| [%03i]        AL_SN                     |\r\n", AL_SN1B);
-//	printf("| [%03i]        AL_CONFIGED               |\r\n", AL_CONFIGED1B);
-//	printf("|========================================|\r\n");
-//	// motor parameters
-//	printf("| [%03i-%03i]    M_RUNTIME               |\r\n", M_RUNTIME2B,M_RUNTIME2B+1);
-//	printf("| [%03i-%03i]    M_PWM_FREQ              |\r\n", M_PWM_FREQ2B, M_PWM_FREQ2B+1);
-//	printf("| [%03i-%03i]    M_SAMPLEPERIOD          |\r\n", M_SAMPLEPERIOD2B, M_SAMPLEPERIOD2B+1);
-//	printf("| [%03i-%03i]    M_WIRING1B              |\r\n", M_WIRING1B, M_WIRING1B+1);
-//	printf("|========================================|\r\n");
-//	// use count
-//	printf("| [%03i-%03i]    M_1COUNT                  |\r\n", M_1COUNT2B, M_1COUNT2B+1);
-//	printf("| [%03i-%03i]    M_2COUNT                  |\r\n", M_2COUNT2B, M_2COUNT2B+1);
-//	printf("| [%03i-%03i]    M_3COUNT                  |\r\n", M_3COUNT2B, M_3COUNT2B+1);
-//	printf("| [%03i-%03i]    M_4COUNT                  |\r\n", M_4COUNT2B, M_4COUNT2B+1);
-//	printf("| [%03i-%03i]    M_5COUNT                  |\r\n", M_5COUNT2B, M_5COUNT2B+1);
-//	printf("| [%03i-%03i]    M_6COUNT                  |\r\n", M_6COUNT2B, M_6COUNT2B+1);
-//	printf("| [%03i-%03i]    M_7COUNT                  |\r\n", M_7COUNT2B, M_7COUNT2B+1);
-//	printf("| [%03i-%03i]    M_8COUNT                  |\r\n", M_8COUNT2B, M_8COUNT2B+1);
-//	printf("|========================================|\r\n");
-//	// Max current
-//	printf("| [%03i-%03i]    M_1MXAMP                  |\r\n", M_1MXAMP2B, M_1MXAMP2B+1);
-//	printf("| [%03i-%03i]    M_2MXAMP                  |\r\n", M_2MXAMP2B, M_2MXAMP2B+1);
-//	printf("| [%03i-%03i]    M_3MXAMP                  |\r\n", M_3MXAMP2B, M_3MXAMP2B+1);
-//	printf("| [%03i-%03i]    M_4MXAMP                  |\r\n", M_4MXAMP2B, M_4MXAMP2B+1);
-//	printf("| [%03i-%03i]    M_5MXAMP                  |\r\n", M_5MXAMP2B, M_5MXAMP2B+1);
-//	printf("| [%03i-%03i]    M_6MXAMP                  |\r\n", M_6MXAMP2B, M_6MXAMP2B+1);
-//	printf("| [%03i-%03i]    M_7MXAMP                  |\r\n", M_7MXAMP2B, M_7MXAMP2B+1);
-//	printf("| [%03i-%03i]    M_8MXAMP                  |\r\n", M_8MXAMP2B, M_8MXAMP2B+1);
-//	printf("|========================================|\r\n");
-//}
-//
-//
-///* Write N bytes to eeprom
-// * Parameters: starting address on eeprom, number of bytes to write, pointer to data of any type */
-//void eeprom_write_nbytes(uint8_t baseAddress, uint8_t bytes, void * pData){
-//    uint8_t *ptr = 0;
-//    //uint8_t data = 0;
-// 	for( uint8_t i = 0; i < bytes && i < 4; i++){
-//		//uint8_t address = baseAddress+i;
-// 		ptr = pData+i; // cast to 1 byte before adding 1 to address
-//		//data = *ptr;
-//		eeprom_write(baseAddress+i, *ptr);
-//	}
-//}
-//
-//
-///* Read N bytes from eeprom
-// * Parameters: starting address on eeprom, number of bytes to read, pointer to store data of any type */
-//void eeprom_read_nbytes(uint8_t baseAddress, uint8_t bytes, void * pData){
-//	uint8_t *ptr = 0;
-// 	for( uint8_t i = 0; i < bytes && i < 4; i++){
-//		//uint8_t address = baseAddress+i;
-// 		ptr = pData+i;
-//		//data = *ptr;
-//		*ptr = eeprom_read(baseAddress+i);
-//	}
-//}
 
 
 /***************************************** END AUTOLAUNCHER FUNCTIONS *****************************************/
