@@ -42,12 +42,17 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+// motor parameters
 #define MOTOR_GREASE_CYCLES 10 // grease pin cycle count
 // Relay parameters
 #define RELAY_ON_TIME 10 // time to keep relay coils energized in milliseconds
 #define RELAY_INTERVAL_TIME 10 // time in between relay activations when in sequence, in milliseconds
-// EEPROM parameters
+// Menu parameters
+#define LAUNCHER_MODE_DEFAULT 0 // [0] GPS stream in standby, [1] normal mode w/GPS after sending command
+#define LAUNCHER_TIMEOUT_DEFAULT 30 // timeout in ms. Once this time has elapsed, go back to stream GPS
+#define LAUNCHER_TIMEOUT_MIN 1
+#define LAUNCHER_TIMEOUT_MAX 600
+#define LAUNCHER_VERBOSE_DEFAULT 0 // while in maun menu: [0] to just echo a command while in main menu or [1] to print extra debugging information
 
 /* USER CODE END PD */
 
@@ -64,9 +69,9 @@ relayLock_t relayLock = reFree; // relay mutex to ensure one coil is driven at a
 rxStatus_t rxStatus = idle; // flag, indicate if a new char was sent over serial. Set to 'active' in the UART interrupt callback, and 'idle' after processing command
 activeMenu_t activeMenu = mainMenu; // menu state to determine how the received command will be processed (config or main)
 // initialize main structures
-launcher_t launcher = {0, '\0', '\0', 0, 'N'};
+launcher_t launcher = {0, '\0', '\0', 0, LAUNCHER_MODE_DEFAULT, LAUNCHER_VERBOSE_DEFAULT, LAUNCHER_TIMEOUT_DEFAULT, 'N'};
 eeprom_t eeprom = {127, 0, EEPROM_BUS_ADDRESS, 10};
-motor_t motor = {MOTOR_RUNTIME_DEFAULT, MOTOR_SAMPLE_PERIOD_DEFAULT, MOTOR_PWM_FREQ_DEFAULT, MOTOR_WIRING_DEFAULT ,{0,0,0,0,0,0,0,0}, {0,0,0,0,0,0,0,0,}}; // runtime, samplePeriod, configed, wiring, imax, use count
+motor_t motor = {MOTOR_RUNTIME_DEFAULT, MOTOR_SAMPLE_PERIOD_DEFAULT, MOTOR_PWM_FREQ_DEFAULT, MOTOR_WIRING_DEFAULT ,{0,0,0,0,0,0,0,0}, {0,0,0,0,0,0,0,0,}, MOTOR_ADC_DISPLAY_DEFAULT}; // runtime, samplePeriod, configed, wiring, imax, use count
 // buffer and flags for byte received by UART in interrupt mode
 char rxBuffer[1] = "\0"; // UART1 receive buffer from computer, a char will be stored here with UART interrupt
 char rxChar = '\0'; // UART1 receive character, == xBuffer[0]
@@ -88,7 +93,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart);
 void print_serial_number(void);
 void uartrx_interrupt_init(void);
 void parameter_init(void);
-
+uint8_t check_timeout(uint32_t startTime, uint32_t timeout);
 // Menu control functions
 void menu_init(void);
 void menu_main_print(void);
@@ -100,13 +105,17 @@ void motor_set_runtime(void);
 void motor_set_sampling_period(void);
 void motor_set_wiring(void);
 void motor_set_pwm_freq(void);
+void motor_set_adc_display(void);
 void update_timer(TIM_HandleTypeDef * htim, uint32_t period, uint8_t channel ,float dutyCycle);
 void motor_reset_stats(void);
 void motor_read_parameters(void);
+void launcher_read_parameters(void);
 void menu_help_print(void);
 void menu_config_tubes_type_serial(void);
 void menu_print_volt_temp(void);
 uint8_t eeprom_reset_stats(uint8_t num);
+void menu_set_launcher_mode(void);
+void menu_set_verbose(void);
 
 // Relay control functions
 void connect_xbt_pin(uint8_t xbtNum); // connect ABC to a desired XBT 1-8
@@ -135,7 +144,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  uint32_t timeoutStart; // used to keep track of time after a command was received to then go back to stream GPS
+  uint8_t timeoutFlag = 0, gpsFlag = 0;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -169,8 +179,9 @@ int main(void)
   RetargetInit(&huart1);
   // Initialize stepper motors
   motor_init();
-  // initialize multiplexer
+  // initialize multiplexer in STM32 mode
   multiplexer_set(MUX_STM32);
+
   // Initialize relays
   relay_init();
   // enable receive interrupt
@@ -179,7 +190,9 @@ int main(void)
   parameter_init();
   // display main menu at startup
   menu_main_print();
-  printf("\r\n> ");
+  if(launcher.verbose == 1) printf("\r\n> ");
+  // Start countdown to switch to GPS after timeout at startup
+  timeoutStart = HAL_GetTick();
 
   /* USER CODE END 2 */
 
@@ -189,14 +202,42 @@ int main(void)
   {
 	  // menu control loop
 	  if(active == rxStatus){ // set to active with UART RX interrupt
+		  // set mux to STM32 to display info in terminal
+		  multiplexer_set(MUX_STM32);
+		  HAL_Delay(1);
+		  // reset uart flag
 		  rxStatus = idle;
+		  // add new line
+		  if(gpsFlag == 1){
+			  gpsFlag = 0;
+			  printf("\r\n\r\n");
+		  }
+		  // process command based on active menu
 		  if( mainMenu == activeMenu){
-			  menu_main_process_input(rxChar); // go to main switch case menu
+			  // go to main switch case menu
+			  menu_main_process_input(rxChar);
 		  } else if ( configMenu == activeMenu){
+			  // go to configuration switch case menu
 			  menu_config_process_input(rxChar);
 		  }
+		  // start keeping track of time after processing the rx character. At startup it resets the time before the while(1)
+		  timeoutStart = HAL_GetTick();
 	  }
-	  // could monitor something routinely here
+	  // Go back to GPS stream is launcher mode = 0
+	  if(launcher.mode == 0){
+		  // check if elapsed time > timeout
+		  timeoutFlag = check_timeout(timeoutStart, launcher.timeout);
+		  if(timeoutFlag == 1){
+			  printf("\r\n|========================================|\n\r");
+			  printf("|   ** Switching back to GPS stream **   |\r\n");
+			  printf("|========================================|\r\n\r\n");
+			  multiplexer_set(MUX_GPS);
+			  // set active menu back to main in order to accept control commands
+			  activeMenu = mainMenu;
+			  gpsFlag = 1;
+		  }
+	  }
+
 	  HAL_Delay(1); // needed to debug
 
     /* USER CODE END WHILE */
@@ -283,7 +324,7 @@ void menu_main_print(void) {
         printf("| Extend   Pin 1-8      U,V,W,X,Y,Z,S,T  |\n\r");
         printf("| Retract  Pin 1-8      A,B,C,D,E,F,H,I  |\n\r");
     } else {
-    	printf("| ERROR, NO TUBE COUNT!!                |\n\r");
+    	printf("| ERROR: NO TUBE COUNT SET!              |\n\r");
     }
     printf("| Unground XBT         	G                |\n\r");
     printf("| Calibrate ON         	K                |\n\r");
@@ -296,196 +337,285 @@ void menu_main_print(void) {
     printf("| Set Tx to STM32       O                |\n\r");
     printf("|========================================|\n\r");
     printf("\r\n");
+
+    if(launcher.mode == 0){
+    	printf("> GPS will start streaming data after %d seconds of inactivity\r\n", launcher.timeout);
+    }
 }//end status_message
 
 
 /* Process char received while in Main menu state */
 void menu_main_process_input(char option){
 	print_char(option);
-	printf("\r\n> Executing OPTION (%c) --> ", option);
+	if(launcher.verbose == 1){
+		printf("\r\n> Executing OPTION (%c) --> ", option);
+	}
 
 	switch (option){
 		// Connect XBT pins
     case '0':
         //engage calibration resistor
-    	printf("unground_xbt(), calibration_resistor(), calibrate_on()\r\n");
+    	if(launcher.verbose == 1){
+    		printf("unground_xbt(), calibration_resistor(), calibrate_on()\r\n");
+    	}
         unground_xbt();
         calibration_resistor();
         calibrate_on();
         break;
     case '1':
-    	printf("connect_xbt_pin(1)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("connect_xbt_pin(1)\r\n");
+    	}
         connect_xbt_pin(1);
         break;
     case '2':
+    	if(launcher.verbose == 1){
+    		printf("connect_xbt_pin(2)\r\n");
+    	}
         connect_xbt_pin(2);
-        printf("connect_xbt_pin(2)\r\n");
         break;
     case '3':
+    	if(launcher.verbose == 1){
+    		printf("connect_xbt_pin(3)\r\n");
+    	}
         connect_xbt_pin(3);
-        printf("connect_xbt_pin(3)\r\n");
         break;
     case '4':
+    	if(launcher.verbose == 1){
+    		printf("connect_xbt_pin(4)\r\n");
+    	}
         connect_xbt_pin(4);
-        printf("connect_xbt_pin(4)\r\n");
         break;
     case '5':
+    	if(launcher.verbose == 1){
+    		printf("connect_xbt_pin(5)\r\n");
+    	}
         connect_xbt_pin(5);
-        printf("connect_xbt_pin(5)\r\n");
         break;
     case '6':
+    	if(launcher.verbose == 1){
+    		printf("connect_xbt_pin(6)\r\n");
+    	}
         connect_xbt_pin(6);
-        printf("connect_xbt_pin(6)\r\n");
         break;
     case '7':
         if (launcher.tubeCount == '8'){
+        	if(launcher.verbose == 1){
+        		printf("connect_xbt_pin(7)\r\n");
+        	}
             connect_xbt_pin(7);
-            printf("connect_xbt_pin(7)\r\n");
         } else {
-        	printf("\r\n* ERROR: tube 7 not available *\r\n");
+        	if(launcher.verbose == 1){
+        		printf("\r\n* ERROR: tube 7 not available *\r\n");
+        	}
         }
         break;
     case '8':
         if (launcher.tubeCount == '8'){
+        	if(launcher.verbose == 1){
+        		printf("connect_xbt_pin(8)\r\n");
+        	}
         	connect_xbt_pin(8);
-        	printf("connect_xbt_pin(8)\r\n");
         } else {
-        	printf("\r\n* ERROR: tube 8 not available *\r\n");
+        	if(launcher.verbose == 1){
+        		printf("\r\n* ERROR: tube 8 not available *\r\n");
+        	}
         }
         break;
         //EXTEND PINS
     case 'U':
-    	printf("extend_pin(1)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("extend_pin(1)\r\n");
+    	}
     	extend_pin(1);
         break;
     case 'V':
-        printf("extend_pin(2)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("extend_pin(2)\r\n");
+    	}
         extend_pin(2);
         break;
     case 'W':
-        printf("extend_pin(3)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("extend_pin(3)\r\n");
+    	}
         extend_pin(3);
         break;
     case 'X':
-        printf("extend_pin(4)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("extend_pin(4)\r\n");
+    	}
         extend_pin(4);
         break;
     case 'Y':
-        printf("extend_pin(5)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("extend_pin(5)\r\n");
+    	}
         extend_pin(5);
         break;
     case 'Z':
-        printf("extend_pin(6)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("extend_pin(6)\r\n");
+    	}
         extend_pin(6);
         break;
     case 'S':
         if (launcher.tubeCount == '8'){
-        	printf("extend_pin(7)\r\n");
+        	if(launcher.verbose == 1){
+        		printf("extend_pin(7)\r\n");
+        	}
         	extend_pin(7);
         } else {
-        	printf("\r\n* ERROR: tube 7 not available *\r\n");
+        	if(launcher.verbose == 1){
+        		printf("\r\n* ERROR: tube 7 not available *\r\n");
+        	}
         }
         break;
     case 'T':
         if (launcher.tubeCount == '8'){
-        	printf("extend_pin(8)\r\n");
+        	if(launcher.verbose == 1){
+        		printf("extend_pin(8)\r\n");
+        	}
         	extend_pin(8);
         } else {
-        	printf("\r\n* ERROR: tube 8 not available *\r\n");
+        	if(launcher.verbose == 1){
+        		printf("\r\n* ERROR: tube 8 not available *\r\n");
+        	}
         }
         break;
         //RETRACT PINS
     case 'A':
-    	printf("retract_pin(1)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("retract_pin(1)\r\n");
+    	}
     	retract_pin(1);
         break;
     case 'B':
-        printf("retract_pin(2)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("retract_pin(2)\r\n");
+    	}
         retract_pin(2);
         break;
     case 'C':
-        printf("retract_pin(3)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("retract_pin(3)\r\n");
+    	}
         retract_pin(3);
         break;
     case 'D':
-        printf("retract_pin(4)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("retract_pin(4)\r\n");
+    	}
         retract_pin(4);
         break;
     case 'E':
-        printf("retract_pin(5)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("retract_pin(5)\r\n");
+    	}
         retract_pin(5);
         break;
     case 'F':
-        printf("retract_pin(6)\r\n");
+    	if(launcher.verbose == 1){
+    		printf("retract_pin(6)\r\n");
+    	}
         retract_pin(6);
         break;
     case 'H':
         if (launcher.tubeCount == '8'){
-        	printf("retract_pin(7)\r\n");
+        	if(launcher.verbose == 1){
+        		printf("retract_pin(7)\r\n");
+        	}
         	retract_pin(7);
         } else {
-        	printf("* ERROR: tube 7 not available *\r\n");
+        	if(launcher.verbose == 1){
+        		printf("* ERROR: tube 7 not available *\r\n");
+        	}
         }
         break;
     case 'I':
         if (launcher.tubeCount == '8'){
-        	printf("retract_pin(8)\r\n");
+        	if(launcher.verbose == 1){
+        		printf("retract_pin(8)\r\n");
+        	}
         	retract_pin(8);
         } else {
-        	printf("* ERROR: tube 8 not available *\r\n");
+        	if(launcher.verbose == 1){
+        		printf("* ERROR: tube 8 not available *\r\n");
+        	}
         }
         break;
     case 'K':
-    	printf("calibrate_on()\r\n");
+    	if(launcher.verbose == 1){
+    		printf("calibrate_on()\r\n");
+    	}
         calibrate_on();
         break;
     case 'R':
-    	printf("reset_relay(), ground XBT\r\n");
+    	if(launcher.verbose == 1){
+    		printf("reset_relay(), ground XBT\r\n");
+    	}
         reset_relay();
         break;
     case 'L':
-    	printf("calibration_resistor()\r\n");
+    	if(launcher.verbose == 1){
+    		printf("calibration_resistor()\r\n");
+    	}
         calibration_resistor();
         break;
     case 'G':
-    	printf("unground_xbt()\r\n");
+    	if(launcher.verbose == 1){
+    		printf("unground_xbt()\r\n");
+    	}
         unground_xbt();
         break;
     case 'M':
         menu_main_print();
         break;
     case '~':
-    	printf("menu_config_print()\r\n");
+    	if(launcher.verbose == 1){
+    		printf("menu_config_print()\r\n");
+    	}
         menu_config_print();
         activeMenu = configMenu; // set configuration menu flag
         break;
     case 's':
-    	printf("print_serial_number()\r\n");
-    	printf("AL Serial Number: ");
+    	if(launcher.verbose == 1){
+    		printf("print_serial_number()\r\n");
+    	}
+    	printf("\r\n> AL Serial Number: ");
         print_serial_number();
         printf("\r\n");
         break;
     case 'P':
-    	printf("menu_print_volt_temp()\r\n");
+    	if(launcher.verbose == 1){
+    		printf("menu_print_volt_temp()\r\n");
+    	}
     	// read input voltage and internal temp on autolauncher
     	menu_print_volt_temp();
     	break;
     case 'N':
-    	printf("multiplexer_set(MUX_GPS)\r\n");
-    	printf("\r\n** Data TX from local GPS --> press 'O' to set Tx to STM32 **\r\n\r\n");
+    	if(launcher.verbose == 1){
+        	printf("multiplexer_set(MUX_GPS)\r\n");
+        	printf("\r\n** Data TX from local GPS --> press 'O' to set Tx to STM32 **\r\n\r\n");
+    	}
     	multiplexer_set(MUX_GPS);
     	break;
     case 'O':
-    	printf("multiplexer_set(MUX_STM32)\r\n");
-    	printf("\r\n** Data TX from STM32 **\r\n");
     	multiplexer_set(MUX_STM32);
+    	if(launcher.verbose == 1){
+    		printf("\r\n> Executing OPTION (%c) --> ", option);
+        	printf("\r\nmultiplexer_set(MUX_STM32)\r\n");
+        	printf("\r\n** Data TX from STM32 **\r\n");
+    	}
     	menu_main_print();
     	break;
     default:
         printf("\r\n** Unrecognized command!!** \r\n");
         break;
 	}
-	printf("\r\n> ");
+	if(launcher.verbose == 1){
+		printf("\r\n> ");
+	}
 }
 
 /* Prints Input voltage and STM32 chip internal temperature */
@@ -523,6 +653,10 @@ void menu_config_print(void) {
     printf("| <W> Set motor PWM frequency           |\n\r");
     printf("| <E> Reset motor statistics            |\n\r");
     printf("| <R> Read motor configuration          |\n\r");
+    printf("| <T> Set launcher mode                 |\n\r");
+    printf("| <Y> Set verbose mode                  |\n\r");
+    printf("| <U> Read launcher parameters          |\n\r");
+    printf("| <I> Set motor ADC display             |\n\r");
     printf("| <Z> Help                              |\n\r");
     printf("| <Q> QUIT to main menu                 |\n\r");
     printf("|=======================================|\n\r");
@@ -533,7 +667,10 @@ void menu_config_print(void) {
 /* Process char received while in configuration menu */
 void menu_config_process_input(char option){
 	print_char(option);
-	printf("\r\n> Executing OPTION (%c) --> ", option);
+	if(launcher.verbose == 1){
+		printf("\r\n> Executing OPTION (%c) --> ", option);
+	}
+
 
     switch (option) {
         case 'Q':
@@ -542,79 +679,135 @@ void menu_config_process_input(char option){
             menu_main_print();
             break;
         case 'M':
-        	printf("menu_config_print()\r\n");
+        	if(launcher.verbose == 1){
+        		printf("menu_config_print()\r\n");
+        	}
             menu_config_print();
             break;
         case 'A':
-        	printf("menu_config_tubes_type_serial()\r\n");
+        	if(launcher.verbose == 1){
+        		printf("menu_config_tubes_type_serial()\r\n");
+        	}
         	// get the autolauncher tube count
         	menu_config_tubes_type_serial();
             // print config menu again
             menu_config_print();
             break;
         case 'S':
-        	printf("extend_all_pins()\r\n");
+        	if(launcher.verbose == 1){
+        		printf("extend_all_pins()\r\n");
+        	}
         	if(launcher.tubeCount == '6')
         		extend_all_pins(6);
         	if(launcher.tubeCount == '8')
         		extend_all_pins(8);
             break;
         case 'D':
-        	printf("retract_all_pins()\r\n");
+        	if(launcher.verbose == 1){
+        		printf("retract_all_pins()\r\n");
+        	}
         	if(launcher.tubeCount == '6')
         		retract_all_pins(6);
         	if(launcher.tubeCount == '8')
         		retract_all_pins(8);
             break;
         case 'F':
-            printf("\n\rSend the \"@\" symbol repeatedly to exit grease pins mode\r\n");
-            printf("grease_pins()\r\n");
+            printf("\n\rSend the @ symbol repeatedly to exit grease pins mode\r\n");
+            if(launcher.verbose == 1){
+            	printf("grease_pins()\r\n");
+            }
             grease_pins(MOTOR_GREASE_CYCLES);
             break;
         case 'G':
         	// clear range of eeprom memory blocks
-        	printf("eeprom_clear_memory_range()\r\n");
+        	if(launcher.verbose == 1){
+        		printf("eeprom_clear_memory_range()\r\n");
+        	}
         	eeprom_clear_memory_range();
         	break;
         case 'H':
         	// read motor statistics (imax, count)
-        	printf("motor_read_stats()");
+        	if(launcher.verbose == 1){
+        		printf("motor_read_stats()");
+        	}
         	motor_read_stats();
         	break;
         case 'J':
         	// set motor runtime
-        	printf("motor_set_runtime()");
+        	if(launcher.verbose == 1){
+        		printf("motor_set_runtime()");
+        	}
         	motor_set_runtime();
     		break;
         case 'K':
         	// set sampling period for ADC when motor is running
-        	printf("motor_set_sampling_period()");
+        	if(launcher.verbose == 1){
+        		printf("motor_set_sampling_period()");
+        	}
         	motor_set_sampling_period();
         	break;
         case 'L':
         	// set motor wiring type: 0 or 1. Based on value it'll change the direction the motor runs in CW/CCW
-        	printf("motor_set_wiring()");
+        	if(launcher.verbose == 1){
+        		printf("motor_set_wiring()");
+        	}
         	motor_set_wiring();
         	break;
         case 'W':
         	// set the motor step PWM freq for the DRV8826
-        	printf("motor_set_pwm_freq()");
+        	if(launcher.verbose == 1){
+        		printf("motor_set_pwm_freq()");
+        	}
         	motor_set_pwm_freq();
         	break;
         case 'E':
         	// reset all motor statistics to 0
-        	printf("motor_reset_stats()");
+        	if(launcher.verbose == 1){
+        		printf("motor_reset_stats()");
+        	}
         	motor_reset_stats();
         	break;
         case 'R':
         	// read all motor configuration parameters
-        	printf("motor_read_parameters()");
+        	if(launcher.verbose == 1){
+        		printf("motor_read_parameters()");
+        	}
         	motor_read_parameters();
         	break;
         case 'Z':
         	// print help for config menu
-        	printf("menu_help_print()");
+        	if(launcher.verbose == 1){
+        		printf("menu_help_print()");
+        	}
         	menu_help_print();
+        	break;
+        case 'T':
+        	// set launcher mode to stream GPS after a timeout or not
+        	if(launcher.verbose == 1){
+        		printf("menu_set_launcher_mode()");
+        	}
+        	menu_set_launcher_mode();
+        	break;
+        case 'Y':
+        	// set verbose mode or not to print more information after each command
+        	if(launcher.verbose == 1){
+        		printf("menu_set_verbose()");
+        	}
+        	menu_set_verbose();
+        	break;
+        case 'U':
+        	// read launcher parameters
+        	if(launcher.verbose == 1){
+        		printf("launcher_read_parameters()");
+        	}
+        	launcher_read_parameters();
+        	break;
+        case 'I':
+        	// set ADC display enable/disable
+        	if(launcher.verbose == 1){
+        		printf("motor_set_adc_display()");
+        	}
+        	motor_set_adc_display();
         	break;
         default:
         	printf("\r\n** Unrecognized command!!** \r\n");
@@ -717,21 +910,22 @@ void eeprom_clear_memory_range(void){
 	printf("> %i block/s cleared!\r\n", eeprom_clear(memStart, memEnd));
 	// update variables with new stored values
 	// read launcher config
-	eeprom_read_nbytes(AL_TUBECOUNT1B, sizeof(launcher.tubeCount), &launcher.tubeCount);
-	eeprom_read_nbytes(AL_TYPE1B, sizeof(launcher.type), &launcher.type);
-	eeprom_read_nbytes(AL_SN1B, sizeof(launcher.serialNumber), &launcher.serialNumber);
-	eeprom_read_nbytes(AL_CONFIGED1B, sizeof(launcher.configured), &launcher.configured);
-	// read motor config
-	eeprom_read_nbytes(M_RUNTIME2B, sizeof(motor.runTime), &motor.runTime);
-	eeprom_read_nbytes(M_PWM_FREQ2B, sizeof(motor.pwmFreq), &motor.pwmFreq);
-	eeprom_read_nbytes(M_SAMPLEPERIOD2B, sizeof(motor.samplePeriod), &motor.samplePeriod);
-	eeprom_read_nbytes(M_WIRING1B, sizeof(motor.wiring), &motor.wiring);
-	// print new values
-	printf("\r\n <EEPROM>\r\n");
-	printf(" <AL> Tubes: %c | Type: %c | Serial: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
-	printf(" <MOTOR> Runtime: %i ms | PWM Frequency: %i Hz | Sample Period: %i ms | Wiring: %i\r\n",
-			(int)motor.runTime, (int)motor.pwmFreq, (int)motor.samplePeriod, (int)motor.wiring);
-	motor_read_stats();
+	parameter_init();
+//	eeprom_read_nbytes(AL_TUBECOUNT1B, sizeof(launcher.tubeCount), &launcher.tubeCount);
+//	eeprom_read_nbytes(AL_TYPE1B, sizeof(launcher.type), &launcher.type);
+//	eeprom_read_nbytes(AL_SN1B, sizeof(launcher.serialNumber), &launcher.serialNumber);
+//	eeprom_read_nbytes(AL_CONFIGED1B, sizeof(launcher.configured), &launcher.configured);
+//	// read motor config
+//	eeprom_read_nbytes(M_RUNTIME2B, sizeof(motor.runTime), &motor.runTime);
+//	eeprom_read_nbytes(M_PWM_FREQ2B, sizeof(motor.pwmFreq), &motor.pwmFreq);
+//	eeprom_read_nbytes(M_SAMPLEPERIOD2B, sizeof(motor.samplePeriod), &motor.samplePeriod);
+//	eeprom_read_nbytes(M_WIRING1B, sizeof(motor.wiring), &motor.wiring);
+//	// print new values
+//	printf("\r\n <EEPROM>\r\n");
+//	printf(" <AL> Tubes: %c | Type: %c | Serial: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
+//	printf(" <MOTOR> Runtime: %i ms | PWM Frequency: %i Hz | Sample Period: %i ms | Wiring: %i\r\n",
+//			(int)motor.runTime, (int)motor.pwmFreq, (int)motor.samplePeriod, (int)motor.wiring);
+//	motor_read_stats();
 }
 
 
@@ -961,6 +1155,34 @@ void motor_set_wiring(void){
 	printf("> Setting saved! Motor wiring: %i\r\n\r\n", (int)motor.wiring);
 }
 
+void motor_set_adc_display(void){
+	printf("\r\n> Current motor ADC display: %i [default=%i]\r\n", motor.adcDisplay, MOTOR_ADC_DISPLAY_DEFAULT);
+	char adcdisp[1];
+	char adcdispPrompt[] = "> Enter motor ADC display [0] disable or [1] enable: ";
+	char adcdispError[] = "\r\n** Enter only numbers! **\r\n";
+	char adcdispCheck[] = {'0','1'};
+	uint8_t aFlag;
+	do{
+		aFlag = 0;
+		get_user_input(adcdispPrompt, adcdispError, 1, adcdispCheck, adcdisp);
+		uint32_t a = (adcdisp[0] - '0');
+		if( a == 1 || a == 0){
+			motor.adcDisplay = (uint8_t) a;
+			aFlag = 1;
+		} else {
+			printf("\r\n** Value out of range! **\r\n");
+		}
+	} while(!aFlag);
+	// Print all inputs
+	printf("> Motor ADC display: %i\r\n", (int)motor.adcDisplay);
+	// store in eeprom
+	eeprom_write_nbytes(M_ADCDISPLAY1B, sizeof(motor.adcDisplay), &motor.adcDisplay);
+	// test memory
+	eeprom_read_nbytes(M_ADCDISPLAY1B, sizeof(motor.adcDisplay), &motor.adcDisplay);
+	printf("> Setting saved! ADC display: %i\r\n\r\n", (int)motor.adcDisplay);
+}
+
+
 /* Clear the memory locations corresponding to motor count and Imax for ALL motors */
 void motor_reset_stats(void){
 	uint8_t motorNum;
@@ -1058,8 +1280,9 @@ void motor_read_parameters(void){
 	eeprom_read_nbytes(M_SAMPLEPERIOD2B, sizeof(tempMotor.samplePeriod), &tempMotor.samplePeriod);
 	eeprom_read_nbytes(M_PWM_FREQ2B, sizeof(tempMotor.pwmFreq), &tempMotor.pwmFreq);
 	eeprom_read_nbytes(M_WIRING1B, sizeof(tempMotor.wiring), &tempMotor.wiring);
+	eeprom_read_nbytes(M_ADCDISPLAY1B, sizeof(tempMotor.adcDisplay), &tempMotor.adcDisplay);
 	// check values are within range or use defaults {flag = 'N'}
-	char rtFlag = 'D', spFlag = 'D', pfFlag = 'D', wFlag = 'D'; // using default values?
+	char rtFlag = 'D', spFlag = 'D', pfFlag = 'D', wFlag = 'D', aFlag = 'D'; // using default values?
 	if(tempMotor.runTime >= MOTOR_RUNTIME_MIN && tempMotor.runTime <= MOTOR_RUNTIME_MAX){
 		motor.runTime = tempMotor.runTime;
 		rtFlag = 'M';
@@ -1076,13 +1299,140 @@ void motor_read_parameters(void){
 		motor.wiring = tempMotor.wiring;
 		wFlag = 'M';
 	}
+	if(tempMotor.adcDisplay == 0 || tempMotor.adcDisplay == 1){
+		motor.adcDisplay = tempMotor.adcDisplay;
+		aFlag = 'M';
+	}
 	// update timer registers
 	uint32_t pwmPeriod = 1E6/motor.pwmFreq; // PWM period in us -> 1E6/200 Hz = 5000 us
 	update_timer(&htim3, pwmPeriod, 3, 0.5); // timer 3 motor PWM steps
 	update_timer(&htim4, motor.samplePeriod, 4, 0.5); // tiemr 4 ADC sampling period
 	// print all parameters
-	printf("\r\n> Non-Volatile Memory {M} OR Default {D}\r\n <MOTOR> Runtime: %i ms {%c} | PWM Frequency: %i Hz {%c} | Sample Period: %i ms {%c} | Wiring: %i {%c} \r\n",
-			 (int)motor.runTime, rtFlag, (int)motor.pwmFreq, spFlag, (int)motor.samplePeriod, pfFlag,  (int)motor.wiring, wFlag);
+	printf("\r\n> Non-Volatile Memory {M} OR Default {D}\r\n"
+			" <MOTOR> Runtime: %i ms {%c} | PWM Frequency: %i Hz {%c} | Sample Period: %i ms {%c} | Wiring: %i {%c} | ADC Display: %i {%c}\r\n",
+			 (int)motor.runTime, rtFlag, (int)motor.pwmFreq, spFlag, (int)motor.samplePeriod, pfFlag, (int)motor.wiring, wFlag, (int)motor.adcDisplay, aFlag);
+}
+
+
+/* Read autolauncher configuration parameters */
+void launcher_read_parameters(void){
+	// get parameters from eeprom or assign default values
+		eeprom_read_nbytes(AL_CONFIGED1B, sizeof(launcher.configured), &launcher.configured);
+		// read values if they were configured previously
+		if(launcher.configured == 'Y'){
+			printf("\r\n** Launcher configuration found in memory **\r\n");
+			eeprom_read_nbytes(AL_TUBECOUNT1B, sizeof(launcher.tubeCount), &launcher.tubeCount);
+			eeprom_read_nbytes(AL_TYPE1B, sizeof(launcher.type), &launcher.type);
+			eeprom_read_nbytes(AL_SN1B, sizeof(launcher.serialNumber), &launcher.serialNumber);
+			eeprom_read_nbytes(AL_MODE1B, sizeof(launcher.mode), &launcher.mode);
+			eeprom_read_nbytes(AL_TIMEOUT2B, sizeof(launcher.timeout), &launcher.timeout);
+			eeprom_read_nbytes(AL_VERBOSE1B, sizeof(launcher.verbose), &launcher.verbose);
+			// print launcher parameters
+			printf("\r\n <AL> Tubes: %c | Type: %c | Serial: %03i | Mode: %i | Timeout: %03i | Verbose: %i <AL>\r\n",
+					launcher.tubeCount, launcher.type, launcher.serialNumber, launcher.mode, launcher.timeout, launcher.verbose);
+		} else {
+			printf("\r\n** Launcher Configuration NOT found in memory **\r\n");
+		}
+}
+
+
+/* Set the runtime for the stepper motors */
+void menu_set_launcher_mode(void){
+	// set mode
+	printf("\r\n> Current launcher mode: %i [default=%i]\r\n", launcher.mode, LAUNCHER_MODE_DEFAULT);
+	char mode[1];
+	char modePrompt[] = "> Enter launcher mode [0] GPS auto stream or [1] normal menu: ";
+	char modeError[] = "\r\n** Enter only numbers! **\r\n";
+	char modeCheck[] = {'0','1'};
+	uint8_t mFlag;
+	// loop until a good value is set or 0 to exit
+	do{
+		mFlag = 0;
+		get_user_input(modePrompt, modeError, 1, modeCheck, mode);
+		uint32_t m =  (mode[0] - '0');
+		// check values are within range
+		if(m == 1 || m == 0){
+			launcher.mode = (uint8_t) m;
+			mFlag = 1;
+		} else {
+			printf("\r\n** Value out of range! **\r\n");
+		}
+	} while(!mFlag);
+
+	// set timeout
+	printf("\r\n> Current menu timeout: %i s [default=%i]\r\n", launcher.timeout, LAUNCHER_TIMEOUT_DEFAULT);
+	char timeout[3];
+	char timeoutPrompt[100];
+	sprintf(timeoutPrompt, "> [exit=%03i] Enter launcher timeout (3-digits) in seconds [%03i-%03i]: ", 0, LAUNCHER_TIMEOUT_MIN, LAUNCHER_TIMEOUT_MAX);
+	char timeoutError[] = "\r\n** Enter only numbers! **\r\n";
+	char timeoutCheck[] = {'0','1','2','3','4','5','6','7','8','9'};
+	uint8_t toFlag, exitFlag = 0;
+	// loop until a good value is set or 0 to exit
+	do{
+		toFlag = 0;
+		get_user_input(timeoutPrompt, timeoutError, 3, timeoutCheck, timeout);
+		uint32_t to = ( (timeout[0] - '0') * 100 + (timeout[1] - '0') * 10 + (timeout[2] - '0') );
+		if(to == 0){
+			printf("\r\n** Exit **\r\n");
+			exitFlag = 1;
+			break;
+		}
+		// check values are within range
+		if( (to >= LAUNCHER_TIMEOUT_MIN) && (to <= LAUNCHER_TIMEOUT_MAX) ){
+			launcher.timeout = (uint16_t) to;
+			toFlag = 1;
+		} else {
+			printf("\r\n** Value out of range! **\r\n");
+		}
+	} while(!toFlag);
+
+	// store launcher mode
+	printf("> Launcher mode: %i\r\n", (int)launcher.mode);
+	// store in eeprom
+	eeprom_write_nbytes(AL_MODE1B, sizeof(launcher.mode), &launcher.mode);
+	// test memory
+	eeprom_read_nbytes(AL_MODE1B, sizeof(launcher.mode), &launcher.mode);
+	printf("> Setting saved! mode: %i\r\n\r\n", (int)launcher.mode);
+
+	// store timeout
+	// store variables if it was not an exit
+	if(exitFlag == 0){
+		// Print all inputs
+		printf("> Launcher timeout: %i s\r\n", (int)launcher.timeout);
+		// store in eeprom
+		eeprom_write_nbytes(AL_TIMEOUT2B, sizeof(launcher.timeout), &launcher.timeout);
+		// test memory
+		eeprom_read_nbytes(AL_TIMEOUT2B, sizeof(launcher.timeout), &launcher.timeout);
+		printf("> Setting saved! timeout: %i\r\n\r\n", (int)launcher.timeout);
+	}
+}
+
+
+void menu_set_verbose(void){
+	printf("\r\n> Current verbose mode: %i [default=%i]\r\n", launcher.verbose, LAUNCHER_VERBOSE_DEFAULT);
+	char verbose[1];
+	char verbosePrompt[] = "> Enter [0] only echo or [1] display extra info: ";
+	char verboseError[] = "\r\n** Enter only numbers! **\r\n";
+	char verboseCheck[] = {'0','1'};
+	uint8_t vFlag;
+	do{
+		vFlag = 0;
+		get_user_input(verbosePrompt, verboseError, 1, verboseCheck, verbose);
+		uint32_t v = (verbose[0] - '0');
+		if( v == 1 || v == 0){
+			launcher.verbose = (uint8_t) v;
+			vFlag = 1;
+		} else {
+			printf("\r\n** Value out of range! **\r\n");
+		}
+	} while(!vFlag);
+	// Print all inputs
+	printf("> Launcher verbose mode: %i\r\n", (int)launcher.verbose);
+	// store in eeprom
+	eeprom_write_nbytes(AL_VERBOSE1B, sizeof(launcher.verbose), &launcher.verbose);
+	// test memory
+	eeprom_read_nbytes(AL_VERBOSE1B, sizeof(launcher.verbose), &launcher.verbose);
+	printf("> Setting saved! verbose: %i\r\n\r\n", (int)launcher.verbose);
 }
 
 
@@ -1096,17 +1446,17 @@ void menu_help_print(void){
 //	uint8_t fMagentaFg[] = "\x1b[35m"; // 35 magenta foreground
 	uint8_t fRedFg[] = "\x1b[35m"; // 35 magenta foreground
 	uint8_t fReset[] = "\x1b[0m"; // reset all formats
-	printf("\r\n|===========================================================================|\r\n");
-	printf("|                        CONFIGURATION MENU HELP                            |\r\n");
-	printf("|===========================================================================|\r\n");
+	printf("\r\n|===============================================================================================|\r\n");
+	printf("|                                   CONFIGURATION MENU HELP                                     |\r\n");
+	printf("|===============================================================================================|\r\n");
 	// A
 	printf("| %s<A> Set AL tubes, type & S/N%s\r\n", fBlueBk, fReset);
 	printf("| Set the autolauncher parameters\r\n");
-	printf("| %s-Tube count%s: number of XBT tubes available (6 or 8)\r\n", fRedFg, fReset);
+	printf("| %sTube count%s: number of XBT tubes available (6 or 8)\r\n", fRedFg, fReset);
 	printf("| This parameter affects the possibility of driving pins and connecting XBTs 7 & 8\r\n");
-	printf("| %s-Type%s: type of launcher large (X) or regular (R)\r\n", fRedFg, fReset );
+	printf("| %sType%s: type of launcher large (X) or regular (R)\r\n", fRedFg, fReset );
 	printf("| This is option is not available if Tube count = 6\r\n");
-	printf("| %s-Serial Number%s: autolauncher unique serial number\r\n", fRedFg, fReset );
+	printf("| %sSerial Number%s: autolauncher unique serial number\r\n", fRedFg, fReset );
 	printf("|\r\n");
 	// S
 	printf("| %s<S> Extend all pins%s\r\n", fBlueBk, fReset);
@@ -1125,8 +1475,8 @@ void menu_help_print(void){
 	printf("| %s<G> Clear memory range%s\r\n", fBlueBk, fReset);
 	printf("| Resets to 0 a range of bytes in EEPROM  \r\n");
 	printf("| Memory addresses are printed out  \r\n");
-	printf("| %s-Start address%s: 0 to 127\r\n", fRedFg, fReset );
-	printf("| %s-End address%s: 0 to 127 & should be greater than Start address\r\n", fRedFg, fReset );
+	printf("| %sStart address%s: 0 to 127\r\n", fRedFg, fReset );
+	printf("| %sEnd address%s: 0 to 127 & should be greater than Start address\r\n", fRedFg, fReset );
 	printf("|\r\n");
 	// H
 	printf("| %s<H> Read motor statistics%s\r\n", fBlueBk, fReset);
@@ -1160,7 +1510,24 @@ void menu_help_print(void){
 	printf("| %s<R> Read motor configuration%s\r\n", fBlueBk, fReset);
 	printf("| Read all motor parameters stored in memory:\r\n");
 	printf("| Runtime, ADC sample interval, Wiring mode, PWM frequency\r\n");
-	printf("|===========================================================================|\r\n\r\n");
+	printf("|\r\n");
+	// T
+	printf("| %s<T> Launcher mode %s\r\n", fBlueBk, fReset);
+	printf("| %sMode%s: The launcher mode determines the behavior of the AL Tx line in standby\r\n", fRedFg, fReset);
+	printf("| Mode 0: the launcher will stream GPS data by default after a period (timeout) of inactivity\r\n");
+	printf("| Mode 1: the launcher behaves as usual, only displaying the output from the STM32\r\n");
+	printf("| %sTimeout%s: The time in seconds after a period of inactivity to start streaming GPS data\r\n", fRedFg, fReset);
+	printf("|\r\n");
+	// Y
+	printf("| %s<Y> Verbose mode %s\r\n", fBlueBk, fReset);
+	printf("| Mode 0: the launcher will only echo characters received while in main menu\r\n");
+	printf("| Mode 1: the launcher will display additional information for debugging purposes\r\n");
+	printf("|\r\n");
+	// U
+	printf("| %s<U> Read launcher parameters %s\r\n", fBlueBk, fReset);
+	printf("| Read current launcher S/N, tubes, type, mode, timeout & verbose mode\r\n");
+	printf("|\r\n");
+	printf("|===============================================================================================|\r\n\r\n");
 
 }
 
@@ -1259,21 +1626,11 @@ void print_inline(char * text){
 
 /* Initialize autolauncher parameters from memory or defaults */
 void parameter_init(void){
-	// get parameters from eeprom or assign default values
-	eeprom_read_nbytes(AL_CONFIGED1B, sizeof(launcher.configured), &launcher.configured);
-	// read values if they were configured previously
-	if(launcher.configured == 'Y'){
-		printf("\r\n** Launcher configuration found in memory **\r\n");
-		eeprom_read_nbytes(AL_TUBECOUNT1B, sizeof(launcher.tubeCount), &launcher.tubeCount);
-		eeprom_read_nbytes(AL_TYPE1B, sizeof(launcher.type), &launcher.type);
-		eeprom_read_nbytes(AL_SN1B, sizeof(launcher.serialNumber), &launcher.serialNumber);
-		printf("\r\n <AL> Tubes: %c | Type: %c | Serial: %03i <AL>\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
-	} else {
-		printf("\r\n** Launcher Configuration NOT found in memory **\r\n");
-	}
+	// read launcher parameters from eeprom
+	launcher_read_parameters();
 	// read motor parameters from eeprom
 	motor_read_parameters();
-	// Read motor stats
+	// Read motor stats from eeprom
 	motor_read_stats();
 }
 
@@ -1306,6 +1663,30 @@ void uartrx_interrupt_init(void){
 	HAL_UART_Receive_IT(&huart1, (uint8_t *) rxBuffer, 1); // enable UART receive interrupt, store received char in rxChar buffer
 }
 
+
+/* Controls if a given time has elapsed and sets a flag*/
+uint8_t check_timeout(uint32_t startTime, uint32_t timeout){
+	uint8_t tflag = 0;
+	uint32_t timeNow = HAL_GetTick();
+	// check timeout is valid
+	if( timeout < LAUNCHER_TIMEOUT_MIN || timeout > LAUNCHER_TIMEOUT_MAX){
+		timeout = LAUNCHER_TIMEOUT_DEFAULT;
+	}
+	timeout = timeout * 1000; // convert to ms
+	// control time
+	if(timeNow >= startTime){
+		if((timeNow - startTime) >= timeout){
+			// set back gps
+			tflag = 1;
+		}
+	} else { // if timeNow < timeStart, this only happens after an overflow >> uwTick ~ 2^32 (50 days)
+		if( (HAL_MAX_DELAY - startTime + timeNow) >= timeout){
+			// set back gps
+			tflag = 1;
+		}
+	}
+	return tflag;
+}
 
 
 /********************************************** RELAY CONTROL FUNCTIONS **********************************************/
