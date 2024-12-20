@@ -257,6 +257,8 @@ uint16_t motor_drive(GPIO_TypeDef * motorPort, uint16_t motorPin, motorDir_t mot
 	HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_3); // stop PWM signal to step the motor
 	//HAL_ADC_Stop_DMA(&hadc1); // stop ADC conversion if there was one triggered before exiting the while(1)
 	HAL_TIM_PWM_Stop_IT(&htim4, TIM_CHANNEL_4); // stop timer triggering adc conversions
+	// turn off LED
+	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, RESET);
 
 	return imax;
 }

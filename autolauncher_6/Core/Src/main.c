@@ -42,17 +42,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-// motor parameters
-#define MOTOR_GREASE_CYCLES 10 // grease pin cycle count
-// Relay parameters
-#define RELAY_ON_TIME 10 // time to keep relay coils energized in milliseconds
-#define RELAY_INTERVAL_TIME 10 // time in between relay activations when in sequence, in milliseconds
-// Menu parameters
-#define LAUNCHER_MODE_DEFAULT 0 // [0] GPS stream in standby, [1] normal mode w/GPS after sending command
-#define LAUNCHER_TIMEOUT_DEFAULT 30 // timeout in ms. Once this time has elapsed, go back to stream GPS
-#define LAUNCHER_TIMEOUT_MIN 1
-#define LAUNCHER_TIMEOUT_MAX 600
-#define LAUNCHER_VERBOSE_DEFAULT 0 // while in maun menu: [0] to just echo a command while in main menu or [1] to print extra debugging information
 
 /* USER CODE END PD */
 
@@ -68,6 +57,9 @@
 relayLock_t relayLock = reFree; // relay mutex to ensure one coil is driven at a time
 rxStatus_t rxStatus = idle; // flag, indicate if a new char was sent over serial. Set to 'active' in the UART interrupt callback, and 'idle' after processing command
 activeMenu_t activeMenu = mainMenu; // menu state to determine how the received command will be processed (config or main)
+mux_t txMode = MUX_STM32; // flag to indicate current status of the Tx line, always start in stm32 mode
+button_t btnStatus = btn_idle; // flag to detect push button was pressed
+uint32_t btnTimeStart;
 // initialize main structures
 launcher_t launcher = {0, '\0', '\0', 0, LAUNCHER_MODE_DEFAULT, LAUNCHER_VERBOSE_DEFAULT, LAUNCHER_TIMEOUT_DEFAULT, 'N'};
 eeprom_t eeprom = {127, 0, EEPROM_BUS_ADDRESS, 10};
@@ -83,51 +75,6 @@ uint8_t adcDMAFull = 0; // this flag is set by the DMA IRQ when the adc buffer i
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
-// Auxiliar functions
-void get_user_input(char promptMsg[], char errorMsg[], uint8_t count, char checkList[], char * output);
-void print_inline(char * text);
-void print_char(uint8_t ch);
-uint8_t is_num(char c);
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart);
-void print_serial_number(void);
-void uartrx_interrupt_init(void);
-void parameter_init(void);
-uint8_t check_timeout(uint32_t startTime, uint32_t timeout);
-// Menu control functions
-void menu_init(void);
-void menu_main_print(void);
-void menu_config_print(void);
-void menu_main_process_input(char option); // process the character received if in main menu
-void menu_config_process_input(char option); // process the character received if in config menu
-void motor_read_stats(void);
-void motor_set_runtime(void);
-void motor_set_sampling_period(void);
-void motor_set_wiring(void);
-void motor_set_pwm_freq(void);
-void motor_set_adc_display(void);
-void update_timer(TIM_HandleTypeDef * htim, uint32_t period, uint8_t channel ,float dutyCycle);
-void motor_reset_stats(void);
-void motor_read_parameters(void);
-void launcher_read_parameters(void);
-void menu_help_print(void);
-void menu_config_tubes_type_serial(void);
-void menu_print_volt_temp(void);
-uint8_t eeprom_reset_stats(uint8_t num);
-void menu_set_launcher_mode(void);
-void menu_set_verbose(void);
-
-// Relay control functions
-void connect_xbt_pin(uint8_t xbtNum); // connect ABC to a desired XBT 1-8
-void calibrate_on(void);
-void calibration_resistor(void);
-void unground_xbt(void);
-void reset_relay(void); // reset all relays, ground ABC
-void drive_relay(GPIO_TypeDef * relayPort, uint16_t relayPin, uint8_t onTime); // drive the desired relay: port, pin & time coil is energized [ms]
-void relay_init(void); // initialized relays in reset state
-
-// RS232 TX control
-void multiplexer_set(mux_t select);
 
 /* USER CODE END PFP */
 
@@ -223,10 +170,12 @@ int main(void)
 		  // start keeping track of time after processing the rx character. At startup it resets the time before the while(1)
 		  timeoutStart = HAL_GetTick();
 	  }
+	  // send command if button was pressed
+	  debounce_button();
 	  // Go back to GPS stream is launcher mode = 0
 	  if(launcher.mode == 0){
 		  // check if elapsed time > timeout
-		  timeoutFlag = check_timeout(timeoutStart, launcher.timeout);
+		  timeoutFlag = check_menu_timeout(timeoutStart, launcher.timeout);
 		  if(timeoutFlag == 1){
 			  printf("\r\n|========================================|\n\r");
 			  printf("|   ** Switching back to GPS stream **   |\r\n");
@@ -237,9 +186,7 @@ int main(void)
 			  gpsFlag = 1;
 		  }
 	  }
-
 	  HAL_Delay(1); // needed to debug
-
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -303,16 +250,13 @@ void menu_main_print(void) {
     printf("\r\n\n\r");
     printf("|========================================|\n\r");
     printf("|   AOML Autolauncher board version 3.0  |\n\r");
-    printf("|        Firmware version 2024.12.dd     |\n\r");
+    printf("|        Firmware version 2024.12.20     |\n\r");
     printf("|========================================|\n\r");
     printf("|     Model #ALV3.0      S/N ");
     print_serial_number();
     printf("       |\n\r");
     printf("|========================================|\n\r");
     printf("|               COMMANDS                 |\r\n");
-//    if (launcher.configured != 'Y') {
-//        printf("| ERROR, NO SERIAL NUMBER ASSIGNED 	 |\n\r");
-//    }
     printf("|========================================|\n\r");
     printf("| Connect  Cal Sim BT  	0                |\n\r");
     if (launcher.tubeCount == '6') {
@@ -640,25 +584,27 @@ void menu_config_print(void) {
     printf("|=======================================|\n\r");
     printf("|               COMMANDS                |\n\r");
     printf("|=======================================|\n\r");
+    printf("| <Z> Help                              |\n\r");
     printf("| <M> This Menu                         |\n\r");
+    printf("| <Q> QUIT to main menu                 |\n\r");
     printf("| <A> Set AL tubes, type & S/N          |\n\r");
-    printf("| <S> Extend all pins                   |\n\r");
-    printf("| <D> Retract all pins                  |\n\r");
-    printf("| <F> Grease pins mode                  |\n\r");
-    printf("| <G> Clear memory range                |\n\r");
-    printf("| <H> Read motor statistics             |\n\r");
-    printf("| <J> Set motor runtime                 |\n\r");
-    printf("| <K> Set ADC sampling period           |\n\r");
-    printf("| <L> Set motor wiring mode             |\n\r");
-    printf("| <W> Set motor PWM frequency           |\n\r");
-    printf("| <E> Reset motor statistics            |\n\r");
-    printf("| <R> Read motor configuration          |\n\r");
     printf("| <T> Set launcher mode                 |\n\r");
     printf("| <Y> Set verbose mode                  |\n\r");
     printf("| <U> Read launcher parameters          |\n\r");
-    printf("| <I> Set motor ADC display             |\n\r");
-    printf("| <Z> Help                              |\n\r");
-    printf("| <Q> QUIT to main menu                 |\n\r");
+    printf("|---------------------------------------|\n\r");
+    printf("| <S> Extend all pins                   |\n\r");
+    printf("| <D> Retract all pins                  |\n\r");
+    printf("| <F> Grease pins mode                  |\n\r");
+    printf("|---------------------------------------|\n\r");
+    printf("| <R> Read motor configuration          |\n\r");
+    printf("| <H> Read motor statistics             |\n\r");
+    printf("| <J> Set motor runtime                 |\n\r");
+    printf("| <K> Set motor ADC sampling period     |\n\r");
+    printf("| <I> Set motor ADC display on/off      |\n\r");
+    printf("| <L> Set motor wiring mode             |\n\r");
+    printf("| <W> Set motor PWM frequency           |\n\r");
+    printf("| <E> Reset motor statistics            |\n\r");
+    printf("| <G> Clear memory range (caution!)     |\n\r");
     printf("|=======================================|\n\r");
     printf("\r\n");
 }//end status_message
@@ -670,7 +616,6 @@ void menu_config_process_input(char option){
 	if(launcher.verbose == 1){
 		printf("\r\n> Executing OPTION (%c) --> ", option);
 	}
-
 
     switch (option) {
         case 'Q':
@@ -896,7 +841,6 @@ void eeprom_clear_memory_range(void){
 		}
 	} while ( !mFlag );
 	// get end address
-	//mem[0] = '\0', mem[1] = '\0' , mem[2] = '\0'; // reet values
 	do{
 		mFlag = 0;
 		get_user_input(mEndPrompt, memError, 3, memCheck, mem);
@@ -911,23 +855,7 @@ void eeprom_clear_memory_range(void){
 	// update variables with new stored values
 	// read launcher config
 	parameter_init();
-//	eeprom_read_nbytes(AL_TUBECOUNT1B, sizeof(launcher.tubeCount), &launcher.tubeCount);
-//	eeprom_read_nbytes(AL_TYPE1B, sizeof(launcher.type), &launcher.type);
-//	eeprom_read_nbytes(AL_SN1B, sizeof(launcher.serialNumber), &launcher.serialNumber);
-//	eeprom_read_nbytes(AL_CONFIGED1B, sizeof(launcher.configured), &launcher.configured);
-//	// read motor config
-//	eeprom_read_nbytes(M_RUNTIME2B, sizeof(motor.runTime), &motor.runTime);
-//	eeprom_read_nbytes(M_PWM_FREQ2B, sizeof(motor.pwmFreq), &motor.pwmFreq);
-//	eeprom_read_nbytes(M_SAMPLEPERIOD2B, sizeof(motor.samplePeriod), &motor.samplePeriod);
-//	eeprom_read_nbytes(M_WIRING1B, sizeof(motor.wiring), &motor.wiring);
-//	// print new values
-//	printf("\r\n <EEPROM>\r\n");
-//	printf(" <AL> Tubes: %c | Type: %c | Serial: %i\r\n", launcher.tubeCount, launcher.type, launcher.serialNumber);
-//	printf(" <MOTOR> Runtime: %i ms | PWM Frequency: %i Hz | Sample Period: %i ms | Wiring: %i\r\n",
-//			(int)motor.runTime, (int)motor.pwmFreq, (int)motor.samplePeriod, (int)motor.wiring);
-//	motor_read_stats();
 }
-
 
 
 /* Read motor use count and Imax stored in eeprom memory */
@@ -998,6 +926,7 @@ void motor_set_runtime(void){
 		printf("> Setting saved! Runtime: %i\r\n\r\n", (int)motor.runTime);
 	}
 }
+
 
 /* Set the ADC sampling period while motor is running
  * This time should be shorter than motor runtime
@@ -1093,6 +1022,7 @@ void motor_set_pwm_freq(void){
 	}
 }
 
+
 /* update timer Pulse (CCRx) and Period (ARR) registers */
 void update_timer(TIM_HandleTypeDef * htim, uint32_t period, uint8_t channel , float dutyCycle){
 	// update timer registers with period and duty cycle See TIM_TypeDef definition
@@ -1155,6 +1085,7 @@ void motor_set_wiring(void){
 	printf("> Setting saved! Motor wiring: %i\r\n\r\n", (int)motor.wiring);
 }
 
+/* Set the ADC values visibility while a motor is running */
 void motor_set_adc_display(void){
 	printf("\r\n> Current motor ADC display: %i [default=%i]\r\n", motor.adcDisplay, MOTOR_ADC_DISPLAY_DEFAULT);
 	char adcdisp[1];
@@ -1266,7 +1197,6 @@ uint8_t eeprom_reset_stats(uint8_t num){
 			break;
 		}
 	}
-
 	return slots;
 }
 
@@ -1407,7 +1337,7 @@ void menu_set_launcher_mode(void){
 	}
 }
 
-
+/* Set verbose mode in main menu to print extra debuggin info after each command is sent */
 void menu_set_verbose(void){
 	printf("\r\n> Current verbose mode: %i [default=%i]\r\n", launcher.verbose, LAUNCHER_VERBOSE_DEFAULT);
 	char verbose[1];
@@ -1609,6 +1539,7 @@ uint8_t is_num(char c){
 /* Select the source of RS232
  * Parameters: select {MUX_GPS, MUX_STM32} */
 void multiplexer_set(mux_t select){
+	txMode = select; // update tx line mode
 	HAL_GPIO_WritePin(MUX_SELECT_GPIO_Port, MUX_SELECT_Pin, select); // SET = UART-tx / RESET = Din from GPS
 }
 
@@ -1663,27 +1594,62 @@ void uartrx_interrupt_init(void){
 	HAL_UART_Receive_IT(&huart1, (uint8_t *) rxBuffer, 1); // enable UART receive interrupt, store received char in rxChar buffer
 }
 
+/* External interrupt callback for push button */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	if(GPIO_Pin == EXTI_BUTTON_Pin){
+		if(btnStatus == btn_idle){
+			btnTimeStart = HAL_GetTick();
+			btnStatus = btn_pushed;
+		}
+	}
+}
+
+
+/* Check button status with debounce timer */
+void debounce_button(void){
+	GPIO_PinState currentState = HAL_GPIO_ReadPin(EXTI_BUTTON_GPIO_Port, EXTI_BUTTON_Pin);
+	uint8_t timeoutFlag = tick_timeout(btnTimeStart, BUTTON_DEBOUNCE_TIME);
+	// if debounce time has elapsed, then check the button status again
+	if(timeoutFlag == 1){
+		if(btnStatus == btn_pushed && currentState == GPIO_PIN_RESET){
+			uint8_t command[] = "\r\n\r\n> Button pushed! <COMMAND TO AMVERSEAS>\r\n\r\n";
+			// send command to Maverseas
+			if(txMode == MUX_GPS){
+				  multiplexer_set(MUX_STM32);
+				  HAL_Delay(5);
+				  HAL_UART_Transmit(&huart1, (const uint8_t *) command, sizeof(command), 100);
+				  //HAL_Delay(5);
+				  multiplexer_set(MUX_GPS);
+			} else { // if it was already in stm32 mode
+				  HAL_UART_Transmit(&huart1, (const uint8_t *) command, sizeof(command), 100);
+			}
+		}
+		// reset button flag
+		btnStatus = btn_idle;
+	}
+}
 
 /* Controls if a given time has elapsed and sets a flag*/
-uint8_t check_timeout(uint32_t startTime, uint32_t timeout){
+uint8_t check_menu_timeout(uint32_t startTime, uint32_t timeout){
 	uint8_t tflag = 0;
-	uint32_t timeNow = HAL_GetTick();
 	// check timeout is valid
 	if( timeout < LAUNCHER_TIMEOUT_MIN || timeout > LAUNCHER_TIMEOUT_MAX){
 		timeout = LAUNCHER_TIMEOUT_DEFAULT;
 	}
 	timeout = timeout * 1000; // convert to ms
-	// control time
+	tflag = tick_timeout(startTime, timeout);
+	return tflag;
+}
+
+/* Returns 1 if a timeout time has elapsed, compared to a start time or a 0 if not
+ * Values are in milliseconds */
+uint8_t tick_timeout(uint32_t startTime, uint32_t timeout){
+	uint8_t tflag = 0;
+	uint32_t timeNow = HAL_GetTick();
 	if(timeNow >= startTime){
-		if((timeNow - startTime) >= timeout){
-			// set back gps
-			tflag = 1;
-		}
+		if((timeNow - startTime) >= timeout) tflag = 1;
 	} else { // if timeNow < timeStart, this only happens after an overflow >> uwTick ~ 2^32 (50 days)
-		if( (HAL_MAX_DELAY - startTime + timeNow) >= timeout){
-			// set back gps
-			tflag = 1;
-		}
+		if( (HAL_MAX_DELAY - startTime + timeNow) >= timeout) tflag = 1;
 	}
 	return tflag;
 }
